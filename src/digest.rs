@@ -27,5 +27,6 @@ pub fn sha256_file(path: &Path) -> Result<String> {
         hasher.update(&buffer[..read]);
     }
 
-    Ok(format!("{hasher:x}"))
+    let digest = hasher.finalize();
+    Ok(format!("{digest:x}"))
 }
