@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runtime-profiler.local/schemas/hotspots.schema.json",
+  "title": "runtime-profiler hotspots v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "reason", "hotspots"],
+  "properties": {
+    "schema_version": { "const": "runtime-profiler/hotspots/v1" },
+    "status": { "enum": ["collected", "not-collected"] },
+    "reason": { "type": "string" },
+    "hotspots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["symbol", "source_file", "line", "evidence_ref"],
+        "properties": {
+          "symbol": { "type": "string", "minLength": 1 },
+          "source_file": { "type": ["string", "null"] },
+          "line": { "type": ["integer", "null"], "minimum": 1 },
+          "evidence_ref": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

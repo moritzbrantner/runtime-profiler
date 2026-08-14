@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runtime-profiler.local/schemas/environment.schema.json",
+  "title": "runtime-profiler environment v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fingerprint",
+    "operating_system",
+    "architecture",
+    "kernel_release",
+    "logical_cpu_count",
+    "source"
+  ],
+  "properties": {
+    "schema_version": { "const": "runtime-profiler/environment/v1" },
+    "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "operating_system": { "type": "string", "minLength": 1 },
+    "architecture": { "type": "string", "minLength": 1 },
+    "kernel_release": { "type": ["string", "null"] },
+    "logical_cpu_count": { "type": "integer", "minimum": 1 },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_sha", "dirty"],
+      "properties": {
+        "git_sha": { "type": ["string", "null"] },
+        "dirty": { "type": ["boolean", "null"] }
+      }
+    }
+  }
+}

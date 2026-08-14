@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Generate dependency lockfile
+        run: cargo generate-lockfile
+
+      - name: Check contracts
+        run: python3 scripts/check_contracts.py
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Smoke capture
+        run: |
+          cargo run --locked -- capture --scenario examples/command.yaml --output target/smoke-bundle
+          cargo run --locked -- validate --bundle target/smoke-bundle
+          cargo run --locked -- summarize --bundle target/smoke-bundle --json
+          cargo run --locked -- render-agent-guidance --bundle target/smoke-bundle
+
+      - name: Preserve generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error

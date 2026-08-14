@@ -1,0 +1,14 @@
+schema_version: runtime-profiler/scenario/v1
+id: example-command
+target:
+  type: command
+  program: sh
+  args:
+    - -c
+    - printf 'profiled workload\n'
+run:
+  warmup_iterations: 1
+  measurement_iterations: 5
+  timeout_seconds: 30
+collectors:
+  - process

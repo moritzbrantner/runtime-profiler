@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runtime-profiler.local/schemas/bundle-manifest.schema.json",
+  "title": "runtime-profiler bundle manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "created_unix_ms",
+    "scenario_id",
+    "scenario_digest",
+    "environment_fingerprint",
+    "source",
+    "files"
+  ],
+  "properties": {
+    "schema_version": { "const": "runtime-profiler/bundle-manifest/v1" },
+    "bundle_id": { "$ref": "#/$defs/sha256" },
+    "created_unix_ms": { "type": "integer", "minimum": 0 },
+    "scenario_id": { "type": "string", "minLength": 1 },
+    "scenario_digest": { "$ref": "#/$defs/sha256" },
+    "environment_fingerprint": { "$ref": "#/$defs/sha256" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_sha", "dirty"],
+      "properties": {
+        "git_sha": { "type": ["string", "null"] },
+        "dirty": { "type": ["boolean", "null"] }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "media_type", "sha256"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^[A-Za-z0-9._/-]+$" },
+          "media_type": { "type": "string", "minLength": 1 },
+          "sha256": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}
