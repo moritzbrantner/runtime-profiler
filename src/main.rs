@@ -136,7 +136,11 @@ fn planned_detection(program: &str, adapter: &str) -> Detection {
         available: false,
         reason: format!(
             "not implemented in 0.1: {adapter}; prerequisite `{program}` {}",
-            if prerequisite { "detected" } else { "not detected" }
+            if prerequisite {
+                "detected"
+            } else {
+                "not detected"
+            }
         ),
     }
 }

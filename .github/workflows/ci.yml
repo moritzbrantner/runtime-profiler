@@ -45,6 +45,7 @@ jobs:
           cargo run --locked -- render-agent-guidance --bundle target/smoke-bundle
 
       - name: Preserve generated lockfile
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cargo-lock

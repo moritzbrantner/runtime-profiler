@@ -119,7 +119,9 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
         if start.elapsed() >= timeout {
             timed_out = true;
             let _ = child.kill();
-            break child.wait().context("failed to reap timed-out target process")?;
+            break child
+                .wait()
+                .context("failed to reap timed-out target process")?;
         }
 
         thread::sleep(Duration::from_millis(5));
@@ -135,7 +137,10 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
     ))
 }
 
-fn resolve_working_directory(loaded: &LoadedScenario, configured: Option<&Path>) -> Option<PathBuf> {
+fn resolve_working_directory(
+    loaded: &LoadedScenario,
+    configured: Option<&Path>,
+) -> Option<PathBuf> {
     configured.map(|path| {
         if path.is_absolute() {
             path.to_path_buf()

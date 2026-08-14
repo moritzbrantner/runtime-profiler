@@ -107,7 +107,10 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         "unsupported scenario schema: {}",
         scenario.schema_version
     );
-    ensure!(!scenario.id.trim().is_empty(), "scenario id must not be empty");
+    ensure!(
+        !scenario.id.trim().is_empty(),
+        "scenario id must not be empty"
+    );
     ensure!(
         scenario.id.len() <= 128,
         "scenario id must be at most 128 characters"
@@ -116,7 +119,8 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         scenario
             .id
             .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')),
+            .all(|character| character.is_ascii_alphanumeric()
+                || matches!(character, '-' | '_' | '.')),
         "scenario id may contain only ASCII letters, digits, dash, underscore, and dot"
     );
     ensure!(
@@ -131,7 +135,10 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         (1..=86_400).contains(&scenario.run.timeout_seconds),
         "timeout_seconds must be between 1 and 86400"
     );
-    ensure!(!scenario.collectors.is_empty(), "at least one collector is required");
+    ensure!(
+        !scenario.collectors.is_empty(),
+        "at least one collector is required"
+    );
 
     let Target::Command {
         program,
@@ -139,13 +146,22 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         inherit_env,
         ..
     } = &scenario.target;
-    ensure!(!program.trim().is_empty(), "target program must not be empty");
-    ensure!(!program.contains('\0'), "target program contains a null byte");
+    ensure!(
+        !program.trim().is_empty(),
+        "target program must not be empty"
+    );
+    ensure!(
+        !program.contains('\0'),
+        "target program contains a null byte"
+    );
     if args.iter().any(|argument| argument.contains('\0')) {
         bail!("target argument contains a null byte");
     }
     for name in inherit_env {
-        ensure!(!name.is_empty(), "inherited environment name must not be empty");
+        ensure!(
+            !name.is_empty(),
+            "inherited environment name must not be empty"
+        );
         ensure!(
             !name.contains('=') && !name.contains('\0'),
             "invalid inherited environment name: {name}"

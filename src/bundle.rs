@@ -156,8 +156,7 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
     }
 
     let guidance: AgentGuidance = read_json(&bundle.join("agent-guidance.json"))?;
-    if guidance.schema_version != GUIDANCE_SCHEMA_V1
-        || guidance.scenario_id != manifest.scenario_id
+    if guidance.schema_version != GUIDANCE_SCHEMA_V1 || guidance.scenario_id != manifest.scenario_id
     {
         diagnostics.push("agent guidance identity is incompatible with manifest".to_owned());
     }
@@ -263,8 +262,7 @@ fn summarize_metric(metric: &MetricSummary) -> String {
 fn detect_environment() -> Result<EnvironmentDocument> {
     let source = SourceIdentity {
         git_sha: command_output("git", &["rev-parse", "HEAD"]),
-        dirty: command_output("git", &["status", "--porcelain"])
-            .map(|output| !output.is_empty()),
+        dirty: command_output("git", &["status", "--porcelain"]).map(|output| !output.is_empty()),
     };
     let mut environment = EnvironmentDocument {
         schema_version: ENVIRONMENT_SCHEMA_V1.to_owned(),
@@ -275,7 +273,8 @@ fn detect_environment() -> Result<EnvironmentDocument> {
         logical_cpu_count: thread_count(),
         source,
     };
-    let normalized = serde_json::to_vec(&environment).context("failed to fingerprint environment")?;
+    let normalized =
+        serde_json::to_vec(&environment).context("failed to fingerprint environment")?;
     environment.fingerprint = sha256_bytes(&normalized);
     Ok(environment)
 }
@@ -309,8 +308,7 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     let mut bytes = serde_json::to_vec_pretty(value)
         .with_context(|| format!("failed to serialize artifact: {}", path.display()))?;
     bytes.push(b'\n');
-    fs::write(path, bytes)
-        .with_context(|| format!("failed to write artifact: {}", path.display()))
+    fs::write(path, bytes).with_context(|| format!("failed to write artifact: {}", path.display()))
 }
 
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
