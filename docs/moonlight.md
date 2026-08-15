@@ -1,10 +1,21 @@
 # Moonlight integration contract
 
+This document specifies the **planned producer-specific adapter boundary** between
+runtime-profiler bundles and Moonlight. It is intentionally downstream of the
+neutral landscape contracts:
+
+1. runtime-profiler exposes a complete immutable bundle as an `agent.evidence/v1` reference;
+2. Moonlight exposes its evaluation as `agent.evaluation-result/v1`;
+3. only then does a Moonlight adapter consume the profiler-native bundle described here.
+
+The adapter may understand runtime-profiler bundle internals. The orchestrator,
+`coding-tooling`, and `coding-agent-conventions` must not need to.
+
 Moonlight consumes complete bundles; it must not scrape human CLI output.
 
 ## Compatibility checks
 
-Before comparing baseline and candidate, Moonlight must check:
+Before comparing baseline and candidate, a Moonlight runtime-profiler adapter must check:
 
 1. Both `manifest.json` files and every listed artifact validate.
 2. Both bundle manifest schema versions are supported.
@@ -28,6 +39,20 @@ Source revisions are expected to differ. Scenario digests are not.
 
 runtime-profiler records descriptive statistics. Moonlight owns noise-floor
 calibration, confidence intervals, practical thresholds, and verdict language.
+`coding-agent-conventions` owns the policy that decides when such a comparison
+is required; the orchestrator owns when it is scheduled.
+
+## Shared-contract handoff
+
+The profiler bundle remains referenced by its original `agent.evidence/v1`
+object. Moonlight's `agent.evaluation-result/v1` should retain that evidence
+reference alongside its differential result rather than copying the profiler
+bundle into evaluator or orchestrator state.
+
+This preserves two independent compatibility axes:
+
+- profiler bundle compatibility between runtime-profiler and the Moonlight adapter;
+- neutral agent-contract compatibility between each component and the wider landscape.
 
 ## Agent handoff
 
