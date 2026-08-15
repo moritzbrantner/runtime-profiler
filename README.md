@@ -2,15 +2,38 @@
 
 `runtime-profiler` captures reproducible runtime evidence for coding agents. It
 runs a declared scenario, records bounded measurements, and emits a versioned
-evidence bundle that Moonlight can compare across a baseline and a candidate.
+evidence bundle that evaluators can consume across a baseline and a candidate.
 
 The project deliberately separates collection from evaluation:
 
-- **runtime-profiler** captures and validates facts.
-- **Moonlight** compares two compatible bundles and evaluates change.
-- **coding-tooling** detects and invokes the profiler through stable commands.
-- **coding-agent-conventions** defines how agents act on the evidence.
-- **agent-loop-orchestrator** schedules the capture/change/recapture loop.
+- **runtime-profiler** captures and validates runtime facts.
+- **agent-contracts** defines the neutral cross-repository evidence reference used by the wider agent landscape.
+- **Moonlight** compares compatible baseline/candidate evidence and evaluates change; runtime-profiler does not own verdicts.
+- **coding-tooling** can invoke profiler scenarios through repository-declared deterministic capabilities; first-class profiler discovery belongs there rather than in this repository.
+- **coding-agent-conventions** defines how agents act on runtime evidence and performance policy.
+- **agent-loop-orchestrator** schedules capture/change/recapture work and stores evidence/evaluation references in durable run state.
+
+The intended boundary is therefore:
+
+```text
+scenario + source revision
+        |
+        v
+runtime-profiler
+        |
+        +--> immutable profiler bundle
+        |
+        +--> agent.evidence/v1 reference
+                    |
+                    v
+          orchestrator / evaluator
+```
+
+The profiler-specific bundle remains the source artifact. `agent.evidence/v1`
+is only the neutral reference envelope; it must not duplicate measurements or
+pull evaluator policy into this repository. Direct Moonlight bundle support is a
+separate adapter step after both components expose their neutral landscape
+boundaries.
 
 ## Current release
 
@@ -24,7 +47,7 @@ The `0.1` foundation supports repeatable command scenarios and records:
 - deterministic JSON guidance sized for an agent context window.
 
 It does **not** compare runs or claim that a candidate is better. That belongs
-to Moonlight.
+to Moonlight or another evaluator.
 
 ## Quick start
 
