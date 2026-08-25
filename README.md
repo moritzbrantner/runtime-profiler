@@ -3,17 +3,18 @@
 `runtime-profiler` captures reproducible runtime evidence for coding agents. It
 runs a declared scenario, records bounded measurements, and emits a versioned
 evidence bundle that evaluators can consume across a baseline and a candidate.
+It is independently usable from the CLI and does not require orchestration.
 
-The project deliberately separates collection from evaluation:
+The project deliberately separates collection from evaluation and coordination:
 
 - **runtime-profiler** captures and validates runtime facts.
-- **agent-contracts** defines the neutral cross-repository evidence reference used by the wider agent landscape.
+- **agent-contracts** defines the neutral cross-repository evidence reference when profiler evidence crosses into another independently owned component.
 - **Moonlight** compares compatible baseline/candidate evidence and evaluates change; runtime-profiler does not own verdicts.
 - **coding-tooling** can invoke profiler scenarios through repository-declared deterministic capabilities; first-class profiler discovery belongs there rather than in this repository.
 - **coding-agent-conventions** defines how agents act on runtime evidence and performance policy.
-- **agent-loop-orchestrator** schedules capture/change/recapture work and stores evidence/evaluation references in durable run state.
+- **agent-loop-orchestrator**, when orchestrated mode is selected, may schedule capture/change/recapture work and store evidence/evaluation references in durable run state.
 
-The intended boundary is therefore:
+The core boundary is therefore:
 
 ```text
 scenario + source revision
@@ -23,17 +24,20 @@ runtime-profiler
         |
         +--> immutable profiler bundle
         |
-        +--> agent.evidence/v1 reference
+        +--> optional agent.evidence/v1 reference
                     |
-                    v
-          orchestrator / evaluator
+                    +--> evaluator, orchestrator, or another consumer
 ```
 
+A developer, coding agent, CI job, lightweight loop, or orchestrator may invoke
+the profiler. The orchestrator is one possible coordinating consumer, not a
+prerequisite for collecting evidence.
+
 The profiler-specific bundle remains the source artifact. `agent.evidence/v1`
-is only the neutral reference envelope; it must not duplicate measurements or
-pull evaluator policy into this repository. Direct Moonlight bundle support is a
-separate adapter step after both components expose their neutral landscape
-boundaries.
+is only the neutral reference envelope when cross-component interchange is
+needed; it must not duplicate measurements or pull evaluator policy into this
+repository. Direct Moonlight bundle support is a separate adapter step after
+both components expose their neutral landscape boundaries.
 
 ## Current release
 
