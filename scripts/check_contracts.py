@@ -9,6 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMAS = ROOT / "schemas"
+FINGERPRINT_SCHEMA_VERSIONS = [
+    "runtime-profiler/environment-fingerprint/legacy-source-inclusive-v0",
+    "runtime-profiler/environment-fingerprint/v1",
+]
 
 
 def load_json(path: Path) -> object:
@@ -34,6 +38,21 @@ def check_example() -> None:
     assert scenario["target"]["type"] == "command"
     assert scenario["collectors"] == ["process"]
     assert scenario["run"]["measurement_iterations"] > 0
+
+
+def check_fingerprint_schema_version(path: Path) -> None:
+    schema = load_json(path)
+    assert isinstance(schema, dict)
+    required = schema.get("required")
+    properties = schema.get("properties")
+    assert isinstance(required, list)
+    assert isinstance(properties, dict)
+    assert "environment_fingerprint_schema_version" not in required, (
+        f"{path} must accept legacy documents without a fingerprint schema field"
+    )
+    assert properties.get("environment_fingerprint_schema_version") == {
+        "enum": FINGERPRINT_SCHEMA_VERSIONS
+    }, f"{path} must constrain supported fingerprint schema versions"
 
 
 def check_required_files() -> None:
@@ -62,6 +81,8 @@ def main() -> None:
     assert schema_paths, "no schemas found"
     for path in schema_paths:
         check_schema(path)
+    for name in ["environment.schema.json", "bundle-manifest.schema.json"]:
+        check_fingerprint_schema_version(SCHEMAS / name)
     check_example()
     check_required_files()
     print(f"contract checks passed ({len(schema_paths)} schemas)")
