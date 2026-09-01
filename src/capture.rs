@@ -64,6 +64,13 @@ fn interruption_received() -> bool {
     false
 }
 
+pub(crate) fn ensure_not_interrupted() -> Result<()> {
+    if interruption_received() {
+        bail!("capture interrupted");
+    }
+    Ok(())
+}
+
 pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
     for warmup in 0..loaded.scenario.run.warmup_iterations {
         let result = execute_once(loaded, warmup + 1)
@@ -165,6 +172,7 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
     #[cfg(unix)]
     command.process_group(0);
 
+    ensure_not_interrupted()?;
     let start = Instant::now();
     let mut child = command
         .spawn()
