@@ -41,10 +41,17 @@ The `0.1` foundation supports repeatable command scenarios and records:
 
 - wall-clock duration distributions;
 - success rate and timeout state;
-- peak resident memory on Linux when `/proc` is available;
+- maximum observed resident memory on Linux when `/proc` is available;
 - source revision and a privacy-preserving environment fingerprint;
 - SHA-256 integrity for every evidence artifact;
 - deterministic JSON guidance sized for an agent context window.
+
+Linux resident memory is sampled from `VmRSS`; `process.max_observed_rss` is the
+largest sampled value and is deliberately not presented as an exact OS peak.
+On Unix, each workload starts in its own process group so timeout termination
+also reaches ordinary descendants in that group. If group termination is not
+available, the collector falls back to terminating the direct child and does
+not claim stronger descendant-cleanup guarantees for that platform.
 
 It does **not** compare runs or claim that a candidate is better. That belongs
 to Moonlight or another evaluator.
