@@ -53,7 +53,7 @@ fn is_nonnegative_integer(number: &serde_json::Number) -> bool {
     let representation = number.to_string();
     let (coefficient, exponent) = representation
         .split_once(['e', 'E'])
-        .map_or((representation.as_str(), "0"), |parts| parts);
+        .unwrap_or((representation.as_str(), "0"));
     let unsigned_coefficient = coefficient.trim_start_matches('-');
     if unsigned_coefficient
         .bytes()
