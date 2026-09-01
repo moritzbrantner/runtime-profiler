@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail, ensure};
 
 use crate::contract::{
-    CapturePlan, Collector, CollectorPlan, SCENARIO_EVIDENCE_SCHEMA_V1, SCENARIO_SCHEMA_V1,
-    Scenario, ScenarioEvidence, Target, TargetEvidence,
+    CapturePlan, Collector, CollectorPlan, PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID,
+    SCENARIO_EVIDENCE_SCHEMA_V1, SCENARIO_SCHEMA_V1, Scenario, ScenarioEvidence, Target,
+    TargetEvidence,
 };
 use crate::digest::sha256_bytes;
 
@@ -35,7 +36,8 @@ impl LoadedScenario {
                         measurements: vec![
                             "process.wall_time".to_owned(),
                             "process.success_rate".to_owned(),
-                            "process.max_observed_rss".to_owned(),
+                            PROCESS_MAX_RSS_V1_ID.to_owned(),
+                            PROCESS_MAX_OBSERVED_RSS_ID.to_owned(),
                         ],
                     },
                 })
@@ -194,6 +196,25 @@ mod tests {
     #[test]
     fn accepts_valid_scenario() {
         assert!(validate_scenario(&valid_scenario()).is_ok());
+    }
+
+    #[test]
+    fn process_plan_preserves_the_v1_rss_identifier() {
+        let scenario = valid_scenario();
+        let normalized = serde_json::to_vec(&scenario).expect("serialize scenario");
+        let loaded = LoadedScenario {
+            scenario,
+            source_path: PathBuf::from("scenario.json"),
+            digest: sha256_bytes(&normalized),
+        };
+
+        let measurements = &loaded.plan().collectors[0].measurements;
+        assert!(measurements.iter().any(|id| id == PROCESS_MAX_RSS_V1_ID));
+        assert!(
+            measurements
+                .iter()
+                .any(|id| id == PROCESS_MAX_OBSERVED_RSS_ID)
+        );
     }
 
     #[test]

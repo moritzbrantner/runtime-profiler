@@ -8,6 +8,8 @@ pub const SCENARIO_EVIDENCE_SCHEMA_V1: &str = "runtime-profiler/scenario-evidenc
 pub const MANIFEST_SCHEMA_V1: &str = "runtime-profiler/bundle-manifest/v1";
 pub const ENVIRONMENT_SCHEMA_V1: &str = "runtime-profiler/environment/v1";
 pub const METRICS_SCHEMA_V1: &str = "runtime-profiler/metrics/v1";
+pub const PROCESS_MAX_RSS_V1_ID: &str = "process.max_rss";
+pub const PROCESS_MAX_OBSERVED_RSS_ID: &str = "process.max_observed_rss";
 pub const HOTSPOTS_SCHEMA_V1: &str = "runtime-profiler/hotspots/v1";
 pub const GUIDANCE_SCHEMA_V1: &str = "runtime-profiler/agent-guidance/v1";
 

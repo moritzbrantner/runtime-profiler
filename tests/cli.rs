@@ -74,13 +74,16 @@ fn captures_validates_and_summarizes_command_scenario() {
     assert_eq!(metrics["scenario_id"], "integration-test");
     assert_eq!(metrics["samples"].as_array().map(Vec::len), Some(3));
     if cfg!(target_os = "linux") {
-        assert!(
-            metrics["metrics"]
-                .as_array()
-                .expect("metrics array")
-                .iter()
-                .any(|metric| metric["id"] == "process.max_observed_rss")
-        );
+        let metrics = metrics["metrics"].as_array().expect("metrics array");
+        let legacy = metrics
+            .iter()
+            .find(|metric| metric["id"] == "process.max_rss")
+            .expect("v1 RSS compatibility metric");
+        let observed = metrics
+            .iter()
+            .find(|metric| metric["id"] == "process.max_observed_rss")
+            .expect("maximum observed RSS metric");
+        assert_eq!(legacy["statistics"], observed["statistics"]);
     }
 }
 

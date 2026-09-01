@@ -12,7 +12,7 @@ use std::os::unix::process::CommandExt;
 
 use crate::contract::{
     METRICS_SCHEMA_V1, MeasurementSample, MetricSummary, MetricsDocument, PreferredDirection,
-    Statistics, Target,
+    PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID, Statistics, Target,
 };
 use crate::scenario::LoadedScenario;
 
@@ -63,12 +63,15 @@ pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
         .filter_map(|sample| sample.max_rss_kib.map(|value| value as f64))
         .collect();
     if !resident_memory.is_empty() {
-        metrics.push(MetricSummary {
-            id: "process.max_observed_rss".to_owned(),
-            unit: "KiB".to_owned(),
-            preferred_direction: PreferredDirection::Lower,
-            statistics: statistics(&resident_memory),
-        });
+        let statistics = statistics(&resident_memory);
+        for id in [PROCESS_MAX_RSS_V1_ID, PROCESS_MAX_OBSERVED_RSS_ID] {
+            metrics.push(MetricSummary {
+                id: id.to_owned(),
+                unit: "KiB".to_owned(),
+                preferred_direction: PreferredDirection::Lower,
+                statistics: statistics.clone(),
+            });
+        }
     }
 
     Ok(MetricsDocument {
@@ -268,13 +271,13 @@ mod tests {
             .filter_map(|sample| sample.max_rss_kib.map(|value| value as f64))
             .collect();
         let metric = MetricSummary {
-            id: "process.max_observed_rss".to_owned(),
+            id: PROCESS_MAX_OBSERVED_RSS_ID.to_owned(),
             unit: "KiB".to_owned(),
             preferred_direction: PreferredDirection::Lower,
             statistics: statistics(&resident_memory),
         };
 
-        assert_eq!(metric.id, "process.max_observed_rss");
+        assert_eq!(metric.id, PROCESS_MAX_OBSERVED_RSS_ID);
         assert_eq!(metric.unit, "KiB");
         assert_eq!(metric.preferred_direction, PreferredDirection::Lower);
     }
