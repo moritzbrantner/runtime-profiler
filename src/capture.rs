@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn memory_metric_is_explicitly_observed_rss() {
-        let samples = vec![MeasurementSample {
+        let samples = [MeasurementSample {
             iteration: 1,
             duration_ms: 1.0,
             max_rss_kib: Some(128),
