@@ -19,6 +19,14 @@ Environment values are inputs to the executed program but are never stored in
 the bundle. Future releases may add keyed, one-way value fingerprints where
 needed, but must not expose raw values.
 
+`environment_fingerprint` is computed from normalized execution-environment
+properties only. Source revision and dirty state remain recorded as provenance
+but do not participate in the fingerprint, so changing code alone does not turn
+a same-machine baseline/candidate pair into a cross-environment comparison.
+The fingerprint input is deliberately limited to non-secret properties already
+recorded in the environment document; usernames, hostnames, repository paths,
+and environment-variable values are not added to it.
+
 ## Statistical interpretation
 
 runtime-profiler reports samples and descriptive statistics. It does not infer
