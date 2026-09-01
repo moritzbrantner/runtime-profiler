@@ -20,6 +20,12 @@
     "created_unix_ms": { "type": "integer", "minimum": 0 },
     "scenario_id": { "type": "string", "minLength": 1 },
     "scenario_digest": { "$ref": "#/$defs/sha256" },
+    "environment_fingerprint_schema_version": {
+      "enum": [
+        "runtime-profiler/environment-fingerprint/legacy-source-inclusive-v0",
+        "runtime-profiler/environment-fingerprint/v1"
+      ]
+    },
     "environment_fingerprint": { "$ref": "#/$defs/sha256" },
     "source": {
       "type": "object",

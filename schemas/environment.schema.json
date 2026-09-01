@@ -15,6 +15,12 @@
   ],
   "properties": {
     "schema_version": { "const": "runtime-profiler/environment/v1" },
+    "environment_fingerprint_schema_version": {
+      "enum": [
+        "runtime-profiler/environment-fingerprint/legacy-source-inclusive-v0",
+        "runtime-profiler/environment-fingerprint/v1"
+      ]
+    },
     "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "operating_system": { "type": "string", "minLength": 1 },
     "architecture": { "type": "string", "minLength": 1 },
