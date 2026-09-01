@@ -64,6 +64,11 @@ def check_agent_evidence_contract(emitted_reference: Path | None) -> None:
     validator = agent_evidence_validator()
     example = load_json(ROOT / "examples" / "agent-evidence-reference.json")
     validator.validate(example)
+    validator.validate(
+        load_json(
+            ROOT / "examples" / "agent-evidence-reference-with-metadata.json"
+        )
+    )
     assert isinstance(example, dict)
     invalid_date = {**example, "createdAt": "not-a-date"}
     assert not validator.is_valid(invalid_date), (
@@ -100,6 +105,7 @@ def check_required_files() -> None:
         "docs/reproducibility.md",
         "docs/security.md",
         "examples/agent-evidence-reference.json",
+        "examples/agent-evidence-reference-with-metadata.json",
         "requirements-dev.txt",
         "schemas/scenario.schema.json",
         "schemas/scenario-evidence.schema.json",

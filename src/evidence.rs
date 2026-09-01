@@ -22,6 +22,10 @@ pub struct AgentEvidenceReference {
     pub uri: String,
     pub digest: String,
     pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
 }
 
 pub fn build_agent_evidence_reference(
@@ -54,6 +58,8 @@ pub fn build_agent_evidence_reference(
         uri,
         digest: format!("sha256:{}", sha256_file(&manifest_path)?),
         created_at: format_created_at(manifest.created_unix_ms)?,
+        media_type: None,
+        size_bytes: None,
     })
 }
 
@@ -103,6 +109,8 @@ mod tests {
             uri: ".agent-loop/evidence/runtime-profiler/bundle-1".to_owned(),
             digest: format!("sha256:{}", "a".repeat(64)),
             created_at: "2026-08-15T04:00:00Z".to_owned(),
+            media_type: None,
+            size_bytes: None,
         };
         let value = serde_json::to_value(reference).expect("serialize evidence reference");
 
@@ -110,6 +118,19 @@ mod tests {
         assert_eq!(value["kind"], RUNTIME_PROFILE_BUNDLE_KIND);
         assert!(value.get("schema_version").is_none());
         assert!(value.get("created_at").is_none());
+        assert!(value.get("mediaType").is_none());
+        assert!(value.get("sizeBytes").is_none());
+    }
+
+    #[test]
+    fn deserializes_optional_agent_evidence_fields() {
+        let reference: AgentEvidenceReference = serde_json::from_str(include_str!(
+            "../examples/agent-evidence-reference-with-metadata.json"
+        ))
+        .expect("deserialize contract-valid evidence metadata");
+
+        assert_eq!(reference.media_type.as_deref(), Some("application/json"));
+        assert_eq!(reference.size_bytes, Some(1_024));
     }
 
     #[test]
