@@ -1,11 +1,14 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use crate::contract::{
     METRICS_SCHEMA_V1, MeasurementSample, MetricSummary, MetricsDocument, PreferredDirection,
@@ -61,7 +64,7 @@ pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
         .collect();
     if !resident_memory.is_empty() {
         metrics.push(MetricSummary {
-            id: "process.max_rss".to_owned(),
+            id: "process.max_observed_rss".to_owned(),
             unit: "KiB".to_owned(),
             preferred_direction: PreferredDirection::Lower,
             statistics: statistics(&resident_memory),
@@ -101,13 +104,15 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
     if let Some(directory) = resolve_working_directory(loaded, working_directory.as_deref()) {
         command.current_dir(directory);
     }
+    #[cfg(unix)]
+    command.process_group(0);
 
     let start = Instant::now();
     let mut child = command
         .spawn()
         .with_context(|| format!("failed to start target program: {program}"))?;
     let timeout = Duration::from_secs(loaded.scenario.run.timeout_seconds);
-    let mut max_rss_kib = read_resident_memory_kib(child.id());
+    let mut max_observed_rss_kib = read_resident_memory_kib(child.id());
     let mut timed_out = false;
 
     let status = loop {
@@ -115,10 +120,13 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
             break status;
         }
 
-        max_rss_kib = max_optional(max_rss_kib, read_resident_memory_kib(child.id()));
+        max_observed_rss_kib = max_optional(
+            max_observed_rss_kib,
+            read_resident_memory_kib(child.id()),
+        );
         if start.elapsed() >= timeout {
             timed_out = true;
-            let _ = child.kill();
+            terminate_timed_out_process(&mut child)?;
             break child
                 .wait()
                 .context("failed to reap timed-out target process")?;
@@ -131,10 +139,30 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
     Ok(sample_from_status(
         iteration,
         duration_ms,
-        max_rss_kib,
+        max_observed_rss_kib,
         status,
         timed_out,
     ))
+}
+
+fn terminate_timed_out_process(child: &mut Child) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let process_group = format!("-{}", child.id());
+        let group_kill = Command::new("kill")
+            .args(["-KILL", "--", &process_group])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if matches!(group_kill, Ok(status) if status.success()) {
+            return Ok(());
+        }
+    }
+
+    child
+        .kill()
+        .context("failed to terminate timed-out target process")
 }
 
 fn resolve_working_directory(
@@ -225,5 +253,31 @@ mod tests {
         assert_eq!(result.mean, 2.5);
         assert_eq!(result.median, 2.5);
         assert_eq!(result.p95, 4.0);
+    }
+
+    #[test]
+    fn memory_metric_is_explicitly_observed_rss() {
+        let samples = vec![MeasurementSample {
+            iteration: 1,
+            duration_ms: 1.0,
+            max_rss_kib: Some(128),
+            exit_code: Some(0),
+            timed_out: false,
+            succeeded: true,
+        }];
+        let resident_memory: Vec<f64> = samples
+            .iter()
+            .filter_map(|sample| sample.max_rss_kib.map(|value| value as f64))
+            .collect();
+        let metric = MetricSummary {
+            id: "process.max_observed_rss".to_owned(),
+            unit: "KiB".to_owned(),
+            preferred_direction: PreferredDirection::Lower,
+            statistics: statistics(&resident_memory),
+        };
+
+        assert_eq!(metric.id, "process.max_observed_rss");
+        assert_eq!(metric.unit, "KiB");
+        assert_eq!(metric.preferred_direction, PreferredDirection::Lower);
     }
 }
