@@ -25,7 +25,7 @@ pub struct AgentEvidenceReference {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub size_bytes: Option<u64>,
+    pub size_bytes: Option<serde_json::Number>,
 }
 
 pub fn build_agent_evidence_reference(
@@ -130,7 +130,10 @@ mod tests {
         .expect("deserialize contract-valid evidence metadata");
 
         assert_eq!(reference.media_type.as_deref(), Some("application/json"));
-        assert_eq!(reference.size_bytes, Some(1_024));
+        assert_eq!(
+            reference.size_bytes.as_ref().map(ToString::to_string),
+            Some("18446744073709551616".to_owned())
+        );
     }
 
     #[test]

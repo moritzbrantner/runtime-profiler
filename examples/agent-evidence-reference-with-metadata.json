@@ -5,5 +5,5 @@
   "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "createdAt": "2026-08-15T04:00:00Z",
   "mediaType": "application/json",
-  "sizeBytes": 1024
+  "sizeBytes": 18446744073709551616
 }
