@@ -120,10 +120,8 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
             break status;
         }
 
-        max_observed_rss_kib = max_optional(
-            max_observed_rss_kib,
-            read_resident_memory_kib(child.id()),
-        );
+        max_observed_rss_kib =
+            max_optional(max_observed_rss_kib, read_resident_memory_kib(child.id()));
         if start.elapsed() >= timeout {
             timed_out = true;
             terminate_timed_out_process(&mut child)?;
