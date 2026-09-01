@@ -25,6 +25,16 @@ const ARTIFACTS: [(&str, &str); 5] = [
     ("hotspots.json", "application/json"),
     ("agent-guidance.json", "application/json"),
 ];
+const ENVIRONMENT_FINGERPRINT_SCHEMA_V1: &str = "runtime-profiler/environment-fingerprint/v1";
+
+#[derive(Serialize)]
+struct EnvironmentFingerprintInput<'a> {
+    schema_version: &'static str,
+    operating_system: &'a str,
+    architecture: &'a str,
+    kernel_release: &'a Option<String>,
+    logical_cpu_count: usize,
+}
 
 pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManifest> {
     ensure!(
@@ -273,10 +283,20 @@ fn detect_environment() -> Result<EnvironmentDocument> {
         logical_cpu_count: thread_count(),
         source,
     };
-    let normalized =
-        serde_json::to_vec(&environment).context("failed to fingerprint environment")?;
-    environment.fingerprint = sha256_bytes(&normalized);
+    environment.fingerprint = environment_fingerprint(&environment)?;
     Ok(environment)
+}
+
+fn environment_fingerprint(environment: &EnvironmentDocument) -> Result<String> {
+    let input = EnvironmentFingerprintInput {
+        schema_version: ENVIRONMENT_FINGERPRINT_SCHEMA_V1,
+        operating_system: &environment.operating_system,
+        architecture: &environment.architecture,
+        kernel_release: &environment.kernel_release,
+        logical_cpu_count: environment.logical_cpu_count,
+    };
+    let normalized = serde_json::to_vec(&input).context("failed to fingerprint environment")?;
+    Ok(sha256_bytes(&normalized))
 }
 
 fn thread_count() -> usize {
@@ -322,11 +342,55 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
 mod tests {
     use super::*;
 
+    fn test_environment(source: SourceIdentity) -> EnvironmentDocument {
+        EnvironmentDocument {
+            schema_version: ENVIRONMENT_SCHEMA_V1.to_owned(),
+            fingerprint: String::new(),
+            operating_system: "linux".to_owned(),
+            architecture: "x86_64".to_owned(),
+            kernel_release: Some("6.12.0".to_owned()),
+            logical_cpu_count: 8,
+            source,
+        }
+    }
+
     #[test]
     fn rejects_unsafe_artifact_paths() {
         assert!(is_safe_relative_path("metrics.json"));
         assert!(!is_safe_relative_path("../metrics.json"));
         assert!(!is_safe_relative_path("/tmp/metrics.json"));
         assert!(!is_safe_relative_path("nested/../metrics.json"));
+    }
+
+    #[test]
+    fn environment_fingerprint_ignores_source_identity() {
+        let baseline = test_environment(SourceIdentity {
+            git_sha: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned()),
+            dirty: Some(false),
+        });
+        let candidate = test_environment(SourceIdentity {
+            git_sha: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned()),
+            dirty: Some(true),
+        });
+
+        assert_eq!(
+            environment_fingerprint(&baseline).expect("baseline fingerprint"),
+            environment_fingerprint(&candidate).expect("candidate fingerprint")
+        );
+    }
+
+    #[test]
+    fn environment_fingerprint_changes_with_execution_environment() {
+        let baseline = test_environment(SourceIdentity {
+            git_sha: None,
+            dirty: None,
+        });
+        let mut candidate = baseline.clone();
+        candidate.logical_cpu_count = 16;
+
+        assert_ne!(
+            environment_fingerprint(&baseline).expect("baseline fingerprint"),
+            environment_fingerprint(&candidate).expect("candidate fingerprint")
+        );
     }
 }
