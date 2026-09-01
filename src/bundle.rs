@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
-use crate::capture::capture_metrics;
+use crate::capture::{capture_metrics, ensure_not_interrupted};
 use crate::contract::{
     AgentGuidance, AgentObservation, ArtifactEntry, BundleManifest,
     ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0, ENVIRONMENT_FINGERPRINT_SCHEMA_V1,
@@ -41,10 +41,14 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         "refusing to overwrite existing bundle: {}",
         output.display()
     );
+    ensure_not_interrupted()?;
 
     let scenario = load_scenario(scenario_path)?;
+    ensure_not_interrupted()?;
     let environment = detect_environment()?;
+    ensure_not_interrupted()?;
     let metrics = capture_metrics(&scenario)?;
+    ensure_not_interrupted()?;
     let hotspots = HotspotsDocument {
         schema_version: HOTSPOTS_SCHEMA_V1.to_owned(),
         status: "not-collected".to_owned(),
@@ -52,23 +56,32 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         hotspots: Vec::new(),
     };
     let guidance = build_guidance(&metrics);
+    ensure_not_interrupted()?;
 
     fs::create_dir_all(output)
         .with_context(|| format!("failed to create bundle directory: {}", output.display()))?;
+    ensure_not_interrupted()?;
     write_json(&output.join("scenario.json"), &scenario.evidence())?;
+    ensure_not_interrupted()?;
     write_json(&output.join("environment.json"), &environment)?;
+    ensure_not_interrupted()?;
     write_json(&output.join("metrics.json"), &metrics)?;
+    ensure_not_interrupted()?;
     write_json(&output.join("hotspots.json"), &hotspots)?;
+    ensure_not_interrupted()?;
     write_json(&output.join("agent-guidance.json"), &guidance)?;
+    ensure_not_interrupted()?;
 
     let mut files = Vec::with_capacity(ARTIFACTS.len());
     for (path, media_type) in ARTIFACTS {
+        ensure_not_interrupted()?;
         files.push(ArtifactEntry {
             path: path.to_owned(),
             media_type: media_type.to_owned(),
             sha256: sha256_file(&output.join(path))?,
         });
     }
+    ensure_not_interrupted()?;
 
     let created_unix_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -91,7 +104,9 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         source: environment.source,
         files,
     };
+    ensure_not_interrupted()?;
     write_json(&output.join("manifest.json"), &manifest)?;
+    ensure_not_interrupted()?;
 
     Ok(manifest)
 }

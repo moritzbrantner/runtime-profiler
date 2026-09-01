@@ -5,14 +5,14 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 #[cfg(unix)]
 use std::sync::Arc;
 #[cfg(unix)]
+use std::sync::OnceLock;
+#[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-#[cfg(unix)]
-use signal_hook::SigId;
 #[cfg(unix)]
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
 #[cfg(unix)]
@@ -23,6 +23,53 @@ use crate::contract::{
     PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID, PreferredDirection, Statistics, Target,
 };
 use crate::scenario::LoadedScenario;
+
+#[cfg(unix)]
+static INTERRUPTED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
+#[cfg(unix)]
+static CLI_HANDLERS_INSTALLED: AtomicBool = AtomicBool::new(false);
+
+/// Installs process-lifetime interruption handling for the short-lived CLI.
+///
+/// Library callers do not install signal handlers; an embedding application
+/// retains ownership of its process-global signal policy.
+#[cfg(unix)]
+pub fn install_cli_interruption_handlers() -> Result<()> {
+    if CLI_HANDLERS_INSTALLED.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+
+    let interrupted = INTERRUPTED.get_or_init(|| Arc::new(AtomicBool::new(false)));
+    for signal in [SIGINT, SIGTERM, SIGHUP] {
+        signal_hook::flag::register_conditional_default(signal, Arc::clone(interrupted))
+            .with_context(|| format!("failed to register signal {signal} fallback"))?;
+        signal_hook::flag::register(signal, Arc::clone(interrupted))
+            .with_context(|| format!("failed to register signal {signal} handler"))?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn install_cli_interruption_handlers() -> Result<()> {
+    Ok(())
+}
+
+fn interruption_received() -> bool {
+    #[cfg(unix)]
+    return INTERRUPTED
+        .get()
+        .is_some_and(|interrupted| interrupted.load(Ordering::SeqCst));
+
+    #[cfg(not(unix))]
+    false
+}
+
+pub(crate) fn ensure_not_interrupted() -> Result<()> {
+    if interruption_received() {
+        bail!("capture interrupted");
+    }
+    Ok(())
+}
 
 pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
     for warmup in 0..loaded.scenario.run.warmup_iterations {
@@ -125,9 +172,7 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
     #[cfg(unix)]
     command.process_group(0);
 
-    #[cfg(unix)]
-    let interruption = InterruptionGuard::install()?;
-
+    ensure_not_interrupted()?;
     let start = Instant::now();
     let mut child = command
         .spawn()
@@ -137,8 +182,7 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
     let mut timed_out = false;
 
     let status = loop {
-        #[cfg(unix)]
-        if interruption.received() {
+        if interruption_received() {
             terminate_process(&mut child)?;
             child
                 .wait()
@@ -189,50 +233,6 @@ fn terminate_process(child: &mut Child) -> Result<()> {
     }
 
     child.kill().context("failed to terminate target process")
-}
-
-#[cfg(unix)]
-struct InterruptionGuard {
-    received: Arc<AtomicBool>,
-    registrations: Vec<SigId>,
-}
-
-#[cfg(unix)]
-impl InterruptionGuard {
-    fn install() -> Result<Self> {
-        let received = Arc::new(AtomicBool::new(false));
-        let mut guard = Self {
-            received,
-            registrations: Vec::new(),
-        };
-        for signal in [SIGINT, SIGTERM, SIGHUP] {
-            guard.registrations.push(
-                signal_hook::flag::register_conditional_default(
-                    signal,
-                    Arc::clone(&guard.received),
-                )
-                .with_context(|| format!("failed to register signal {signal} fallback"))?,
-            );
-            guard.registrations.push(
-                signal_hook::flag::register(signal, Arc::clone(&guard.received))
-                    .with_context(|| format!("failed to register signal {signal} handler"))?,
-            );
-        }
-        Ok(guard)
-    }
-
-    fn received(&self) -> bool {
-        self.received.load(Ordering::SeqCst)
-    }
-}
-
-#[cfg(unix)]
-impl Drop for InterruptionGuard {
-    fn drop(&mut self) {
-        for registration in self.registrations.drain(..) {
-            signal_hook::low_level::unregister(registration);
-        }
-    }
 }
 
 fn resolve_working_directory(

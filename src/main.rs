@@ -5,6 +5,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, ensure};
 use clap::{Parser, Subcommand};
+use runtime_profiler::capture::install_cli_interruption_handlers;
 use runtime_profiler::contract::{Detection, DetectionReport, MetricsDocument};
 use runtime_profiler::{
     build_agent_evidence_reference, capture_bundle, load_scenario, render_agent_guidance,
@@ -75,6 +76,7 @@ fn main() -> Result<()> {
             print_json(&loaded.plan());
         }
         Commands::Capture { scenario, output } => {
+            install_cli_interruption_handlers()?;
             let manifest = capture_bundle(&scenario, &output)?;
             print_json(&manifest);
         }

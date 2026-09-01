@@ -58,9 +58,10 @@ environment.
 On Unix, each workload starts in its own process group so timeout termination
 also reaches ordinary descendants in that group. If group termination is not
 available, the collector falls back to terminating the direct child and does
-not claim stronger descendant-cleanup guarantees for that platform.
-Unix interruption signals are handled cooperatively: the profiler terminates
-and reaps the isolated workload group before returning an interruption error.
+not claim stronger descendant-cleanup guarantees for that platform. The
+short-lived CLI installs interruption handling for its process lifetime so it
+can terminate and reap that group before exiting; library callers retain
+ownership of their embedding process's signal policy.
 
 It does **not** compare runs or claim that a candidate is better. That belongs
 to Moonlight or another evaluator.
