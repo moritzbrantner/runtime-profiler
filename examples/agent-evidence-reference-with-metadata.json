@@ -1,9 +1,0 @@
-{
-  "schemaVersion": 1,
-  "kind": "runtime-profile-bundle",
-  "uri": ".agent-loop/evidence/runtime-profiler/bundle-1",
-  "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  "createdAt": "2026-08-15T04:00:00Z",
-  "mediaType": "application/json",
-  "sizeBytes": 1024
-}
