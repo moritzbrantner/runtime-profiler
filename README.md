@@ -30,7 +30,7 @@ runtime-profiler
 ```
 
 The profiler-specific bundle remains the source artifact. `agent.evidence/v1`
-is only the neutral reference envelope; it must not duplicate measurements or
+is only the neutral reference envelope; it does not duplicate measurements or
 pull evaluator policy into this repository. Direct Moonlight bundle support is a
 separate adapter step after both components expose their neutral landscape
 boundaries.
@@ -44,7 +44,8 @@ The `0.1` foundation supports repeatable command scenarios and records:
 - maximum observed resident memory on Linux when `/proc` is available;
 - source revision and a privacy-preserving environment fingerprint;
 - SHA-256 integrity for every evidence artifact;
-- deterministic JSON guidance sized for an agent context window.
+- deterministic JSON guidance sized for an agent context window;
+- optional `agent.evidence/v1` references for validated bundles crossing a component boundary.
 
 Linux resident memory is sampled from `VmRSS`; `process.max_observed_rss` is the
 largest sampled value and is deliberately not presented as an exact OS peak.
@@ -76,6 +77,9 @@ cargo run -- capture \
 cargo run -- validate --bundle .runtime-profiler/example
 cargo run -- summarize --bundle .runtime-profiler/example
 cargo run -- render-agent-guidance --bundle .runtime-profiler/example
+cargo run -- evidence-reference \
+  --bundle .runtime-profiler/example \
+  --uri .agent-loop/evidence/runtime-profiler/example
 ```
 
 The first capture creates an immutable directory. Choose a new output directory
@@ -113,12 +117,31 @@ bundle/
 └── agent-guidance.json
 ```
 
+The native bundle is the authoritative profiler artifact. When another
+component needs a neutral reference, `evidence-reference` first validates the
+bundle and then emits `agent.evidence/v1` with:
+
+- `kind: runtime-profile-bundle`;
+- the caller-provided storage URI unchanged;
+- `digest: sha256:<manifest hash>`, which commits to the validated manifest and
+  therefore to every artifact digest listed by that manifest;
+- `createdAt` deterministically derived from the bundle's creation timestamp.
+
+The neutral envelope contains no profiler measurements and can be regenerated
+for a relocated bundle by supplying a different URI; the content digest and
+creation time remain unchanged.
+Caller-provided URIs are preserved verbatim and limited to 2,048 UTF-8 bytes so
+CLI and agent output remains bounded.
+
+The pinned external contract revision is documented in [`contracts/README.md`](contracts/README.md).
+
 See [Architecture](docs/architecture.md), [Moonlight contract](docs/moonlight.md),
 and the [Roadmap](ROADMAP.md) for the planned collector adapters.
 
 ## Development
 
 ```bash
+python3 -m pip install -r requirements-dev.txt
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test

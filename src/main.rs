@@ -8,7 +8,8 @@ use clap::{Parser, Subcommand};
 use runtime_profiler::capture::install_cli_interruption_handlers;
 use runtime_profiler::contract::{Detection, DetectionReport, MetricsDocument};
 use runtime_profiler::{
-    capture_bundle, load_scenario, render_agent_guidance, summarize_bundle, validate_bundle,
+    build_agent_evidence_reference, capture_bundle, load_scenario, render_agent_guidance,
+    summarize_bundle, validate_bundle,
 };
 
 #[derive(Debug, Parser)]
@@ -57,6 +58,13 @@ enum Commands {
         #[arg(long)]
         output: Option<PathBuf>,
     },
+    /// Emit an agent.evidence/v1 reference to a valid immutable bundle.
+    EvidenceReference {
+        #[arg(long)]
+        bundle: PathBuf,
+        #[arg(long)]
+        uri: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -98,6 +106,9 @@ fn main() -> Result<()> {
             } else {
                 print!("{rendered}");
             }
+        }
+        Commands::EvidenceReference { bundle, uri } => {
+            print_json(&build_agent_evidence_reference(&bundle, uri)?);
         }
     }
     Ok(())
