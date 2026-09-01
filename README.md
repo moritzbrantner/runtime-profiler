@@ -50,6 +50,9 @@ Linux resident memory is sampled from `VmRSS`; `process.max_observed_rss` is the
 largest sampled value and is deliberately not presented as an exact OS peak.
 The v1 `process.max_rss` identifier remains as a compatibility alias with
 identical statistics and does not imply a stronger peak-memory guarantee.
+Capture plans advertise both RSS identifiers only on Linux; their absence from
+the process collector's measurement list means RSS collection is unsupported on
+the current platform.
 On Unix, each workload starts in its own process group so timeout termination
 also reaches ordinary descendants in that group. If group termination is not
 available, the collector falls back to terminating the direct child and does

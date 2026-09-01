@@ -33,12 +33,7 @@ impl LoadedScenario {
                     Collector::Process => CollectorPlan {
                         id: "process".to_owned(),
                         supported: true,
-                        measurements: vec![
-                            "process.wall_time".to_owned(),
-                            "process.success_rate".to_owned(),
-                            PROCESS_MAX_RSS_V1_ID.to_owned(),
-                            PROCESS_MAX_OBSERVED_RSS_ID.to_owned(),
-                        ],
+                        measurements: process_measurements(),
                     },
                 })
                 .collect(),
@@ -72,6 +67,20 @@ impl LoadedScenario {
             collectors: self.scenario.collectors.clone(),
         }
     }
+}
+
+fn process_measurements() -> Vec<String> {
+    let mut measurements = vec![
+        "process.wall_time".to_owned(),
+        "process.success_rate".to_owned(),
+    ];
+    if cfg!(target_os = "linux") {
+        measurements.extend([
+            PROCESS_MAX_RSS_V1_ID.to_owned(),
+            PROCESS_MAX_OBSERVED_RSS_ID.to_owned(),
+        ]);
+    }
+    measurements
 }
 
 pub fn load_scenario(path: &Path) -> Result<LoadedScenario> {
@@ -199,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn process_plan_preserves_the_v1_rss_identifier() {
+    fn process_plan_advertises_only_platform_supported_measurements() {
         let scenario = valid_scenario();
         let normalized = serde_json::to_vec(&scenario).expect("serialize scenario");
         let loaded = LoadedScenario {
@@ -209,12 +218,12 @@ mod tests {
         };
 
         let measurements = &loaded.plan().collectors[0].measurements;
-        assert!(measurements.iter().any(|id| id == PROCESS_MAX_RSS_V1_ID));
-        assert!(
-            measurements
-                .iter()
-                .any(|id| id == PROCESS_MAX_OBSERVED_RSS_ID)
-        );
+        let has_legacy_rss = measurements.iter().any(|id| id == PROCESS_MAX_RSS_V1_ID);
+        let has_observed_rss = measurements
+            .iter()
+            .any(|id| id == PROCESS_MAX_OBSERVED_RSS_ID);
+        assert_eq!(has_legacy_rss, cfg!(target_os = "linux"));
+        assert_eq!(has_observed_rss, cfg!(target_os = "linux"));
     }
 
     #[test]
