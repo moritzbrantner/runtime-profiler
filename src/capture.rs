@@ -11,8 +11,8 @@ use anyhow::{Context, Result, bail};
 use std::os::unix::process::CommandExt;
 
 use crate::contract::{
-    METRICS_SCHEMA_V1, MeasurementSample, MetricSummary, MetricsDocument, PreferredDirection,
-    PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID, Statistics, Target,
+    METRICS_SCHEMA_V1, MeasurementSample, MetricSummary, MetricsDocument,
+    PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID, PreferredDirection, Statistics, Target,
 };
 use crate::scenario::LoadedScenario;
 
