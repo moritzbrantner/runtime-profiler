@@ -25,6 +25,9 @@ jobs:
       - name: Generate dependency lockfile
         run: cargo generate-lockfile
 
+      - name: Install contract validation dependencies
+        run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
+
       - name: Check contracts
         run: python3 scripts/check_contracts.py
 
@@ -43,6 +46,8 @@ jobs:
           cargo run --locked -- validate --bundle target/smoke-bundle
           cargo run --locked -- summarize --bundle target/smoke-bundle --json
           cargo run --locked -- render-agent-guidance --bundle target/smoke-bundle
+          cargo run --locked -- evidence-reference --bundle target/smoke-bundle --uri .agent-loop/evidence/runtime-profiler/smoke-bundle > target/smoke-evidence-reference.json
+          python3 scripts/check_contracts.py --evidence-reference target/smoke-evidence-reference.json
 
       - name: Preserve generated lockfile
         if: always()

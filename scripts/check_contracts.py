@@ -1,14 +1,22 @@
 #!/usr/bin/env python3
-"""Dependency-free structural checks for committed contract artifacts."""
+"""Structural checks for native contracts and pinned interchange schemas."""
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 from pathlib import Path
+
+from jsonschema import Draft202012Validator, FormatChecker
 
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMAS = ROOT / "schemas"
+AGENT_EVIDENCE_SCHEMA = ROOT / "contracts" / "agent-evidence-v1.schema.json"
+AGENT_EVIDENCE_SCHEMA_SHA256 = (
+    "bd5ebac98d98e03656d07a28f079e1544e3f37ba7bf8756935ad997e73485e92"
+)
 FINGERPRINT_SCHEMA_VERSIONS = [
     "runtime-profiler/environment-fingerprint/legacy-source-inclusive-v0",
     "runtime-profiler/environment-fingerprint/v1",
@@ -40,6 +48,36 @@ def check_example() -> None:
     assert scenario["run"]["measurement_iterations"] > 0
 
 
+def agent_evidence_validator() -> Draft202012Validator:
+    schema_bytes = AGENT_EVIDENCE_SCHEMA.read_bytes()
+    actual_sha256 = hashlib.sha256(schema_bytes).hexdigest()
+    assert actual_sha256 == AGENT_EVIDENCE_SCHEMA_SHA256, (
+        "pinned agent.evidence/v1 schema changed without updating its contract pin"
+    )
+
+    schema = json.loads(schema_bytes)
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+def check_agent_evidence_contract(emitted_reference: Path | None) -> None:
+    validator = agent_evidence_validator()
+    example = load_json(ROOT / "examples" / "agent-evidence-reference.json")
+    validator.validate(example)
+    validator.validate(
+        load_json(
+            ROOT / "examples" / "agent-evidence-reference-with-metadata.json"
+        )
+    )
+    assert isinstance(example, dict)
+    invalid_date = {**example, "createdAt": "not-a-date"}
+    assert not validator.is_valid(invalid_date), (
+        "agent.evidence/v1 date-time formats must be enforced"
+    )
+    if emitted_reference is not None:
+        validator.validate(load_json(emitted_reference))
+
+
 def check_fingerprint_schema_version(path: Path) -> None:
     schema = load_json(path)
     assert isinstance(schema, dict)
@@ -60,10 +98,15 @@ def check_required_files() -> None:
         "README.md",
         "ROADMAP.md",
         "AGENTS.md",
+        "contracts/README.md",
+        "contracts/agent-evidence-v1.schema.json",
         "docs/architecture.md",
         "docs/moonlight.md",
         "docs/reproducibility.md",
         "docs/security.md",
+        "examples/agent-evidence-reference.json",
+        "examples/agent-evidence-reference-with-metadata.json",
+        "requirements-dev.txt",
         "schemas/scenario.schema.json",
         "schemas/scenario-evidence.schema.json",
         "schemas/bundle-manifest.schema.json",
@@ -76,7 +119,18 @@ def check_required_files() -> None:
     assert not missing, f"missing required files: {', '.join(missing)}"
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--evidence-reference",
+        type=Path,
+        help="optional CLI-emitted agent.evidence/v1 JSON to validate",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = parse_args()
     schema_paths = sorted(SCHEMAS.glob("*.schema.json"))
     assert schema_paths, "no schemas found"
     for path in schema_paths:
@@ -84,8 +138,9 @@ def main() -> None:
     for name in ["environment.schema.json", "bundle-manifest.schema.json"]:
         check_fingerprint_schema_version(SCHEMAS / name)
     check_example()
+    check_agent_evidence_contract(args.evidence_reference)
     check_required_files()
-    print(f"contract checks passed ({len(schema_paths)} schemas)")
+    print(f"contract checks passed ({len(schema_paths)} native schemas + agent.evidence/v1)")
 
 
 if __name__ == "__main__":
