@@ -9,7 +9,7 @@ risk. A later phase must not weaken contracts established by an earlier phase.
 - [x] `detect`, `plan`, `capture`, `summarize`, `validate`, and
   `render-agent-guidance` commands.
 - [x] Warm-up and repeated measurement runs.
-- [x] Duration, success, timeout, and Linux peak-RSS measurements.
+- [x] Duration, success, timeout, and Linux maximum-observed-RSS measurements.
 - [x] Immutable, integrity-checked evidence bundle.
 - [x] Agent-sized structured guidance.
 - [x] Moonlight compatibility rules.
