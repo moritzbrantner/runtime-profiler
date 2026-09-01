@@ -3,9 +3,11 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 
+use crate::capture::resident_memory_sampling_supported;
 use crate::contract::{
-    CapturePlan, Collector, CollectorPlan, SCENARIO_EVIDENCE_SCHEMA_V1, SCENARIO_SCHEMA_V1,
-    Scenario, ScenarioEvidence, Target, TargetEvidence,
+    CapturePlan, Collector, CollectorPlan, PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID,
+    SCENARIO_EVIDENCE_SCHEMA_V1, SCENARIO_SCHEMA_V1, Scenario, ScenarioEvidence, Target,
+    TargetEvidence,
 };
 use crate::digest::sha256_bytes;
 
@@ -32,11 +34,7 @@ impl LoadedScenario {
                     Collector::Process => CollectorPlan {
                         id: "process".to_owned(),
                         supported: true,
-                        measurements: vec![
-                            "process.wall_time".to_owned(),
-                            "process.success_rate".to_owned(),
-                            "process.max_rss".to_owned(),
-                        ],
+                        measurements: process_measurements(resident_memory_sampling_supported()),
                     },
                 })
                 .collect(),
@@ -70,6 +68,20 @@ impl LoadedScenario {
             collectors: self.scenario.collectors.clone(),
         }
     }
+}
+
+fn process_measurements(rss_supported: bool) -> Vec<String> {
+    let mut measurements = vec![
+        "process.wall_time".to_owned(),
+        "process.success_rate".to_owned(),
+    ];
+    if rss_supported {
+        measurements.extend([
+            PROCESS_MAX_RSS_V1_ID.to_owned(),
+            PROCESS_MAX_OBSERVED_RSS_ID.to_owned(),
+        ]);
+    }
+    measurements
 }
 
 pub fn load_scenario(path: &Path) -> Result<LoadedScenario> {
@@ -194,6 +206,23 @@ mod tests {
     #[test]
     fn accepts_valid_scenario() {
         assert!(validate_scenario(&valid_scenario()).is_ok());
+    }
+
+    #[test]
+    fn process_measurements_reflect_rss_capability() {
+        for (rss_supported, expected) in [(false, false), (true, true)] {
+            let measurements = process_measurements(rss_supported);
+            assert_eq!(
+                measurements.iter().any(|id| id == PROCESS_MAX_RSS_V1_ID),
+                expected
+            );
+            assert_eq!(
+                measurements
+                    .iter()
+                    .any(|id| id == PROCESS_MAX_OBSERVED_RSS_ID),
+                expected
+            );
+        }
     }
 
     #[test]

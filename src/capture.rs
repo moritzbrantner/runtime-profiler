@@ -1,15 +1,26 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
+#[cfg(unix)]
+use std::sync::Arc;
+#[cfg(unix)]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
+#[cfg(unix)]
+use signal_hook::SigId;
+#[cfg(unix)]
+use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use crate::contract::{
-    METRICS_SCHEMA_V1, MeasurementSample, MetricSummary, MetricsDocument, PreferredDirection,
-    Statistics, Target,
+    METRICS_SCHEMA_V1, MeasurementSample, MetricSummary, MetricsDocument,
+    PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID, PreferredDirection, Statistics, Target,
 };
 use crate::scenario::LoadedScenario;
 
@@ -55,18 +66,7 @@ pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
         },
     ];
 
-    let resident_memory: Vec<f64> = samples
-        .iter()
-        .filter_map(|sample| sample.max_rss_kib.map(|value| value as f64))
-        .collect();
-    if !resident_memory.is_empty() {
-        metrics.push(MetricSummary {
-            id: "process.max_rss".to_owned(),
-            unit: "KiB".to_owned(),
-            preferred_direction: PreferredDirection::Lower,
-            statistics: statistics(&resident_memory),
-        });
-    }
+    metrics.extend(memory_metric_summaries(&samples));
 
     Ok(MetricsDocument {
         schema_version: METRICS_SCHEMA_V1.to_owned(),
@@ -74,6 +74,27 @@ pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
         samples,
         metrics,
     })
+}
+
+fn memory_metric_summaries(samples: &[MeasurementSample]) -> Vec<MetricSummary> {
+    let resident_memory: Vec<f64> = samples
+        .iter()
+        .filter_map(|sample| sample.max_rss_kib.map(|value| value as f64))
+        .collect();
+    if resident_memory.is_empty() {
+        Vec::new()
+    } else {
+        let summary = statistics(&resident_memory);
+        [PROCESS_MAX_RSS_V1_ID, PROCESS_MAX_OBSERVED_RSS_ID]
+            .into_iter()
+            .map(|id| MetricSummary {
+                id: id.to_owned(),
+                unit: "KiB".to_owned(),
+                preferred_direction: PreferredDirection::Lower,
+                statistics: summary.clone(),
+            })
+            .collect()
+    }
 }
 
 fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSample> {
@@ -101,24 +122,39 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
     if let Some(directory) = resolve_working_directory(loaded, working_directory.as_deref()) {
         command.current_dir(directory);
     }
+    #[cfg(unix)]
+    command.process_group(0);
+
+    #[cfg(unix)]
+    let interruption = InterruptionGuard::install()?;
 
     let start = Instant::now();
     let mut child = command
         .spawn()
         .with_context(|| format!("failed to start target program: {program}"))?;
     let timeout = Duration::from_secs(loaded.scenario.run.timeout_seconds);
-    let mut max_rss_kib = read_resident_memory_kib(child.id());
+    let mut max_observed_rss_kib = read_resident_memory_kib(child.id());
     let mut timed_out = false;
 
     let status = loop {
+        #[cfg(unix)]
+        if interruption.received() {
+            terminate_process(&mut child)?;
+            child
+                .wait()
+                .context("failed to reap interrupted target process")?;
+            bail!("capture interrupted");
+        }
+
         if let Some(status) = child.try_wait().context("failed to poll target process")? {
             break status;
         }
 
-        max_rss_kib = max_optional(max_rss_kib, read_resident_memory_kib(child.id()));
+        max_observed_rss_kib =
+            max_optional(max_observed_rss_kib, read_resident_memory_kib(child.id()));
         if start.elapsed() >= timeout {
             timed_out = true;
-            let _ = child.kill();
+            terminate_process(&mut child)?;
             break child
                 .wait()
                 .context("failed to reap timed-out target process")?;
@@ -131,10 +167,72 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
     Ok(sample_from_status(
         iteration,
         duration_ms,
-        max_rss_kib,
+        max_observed_rss_kib,
         status,
         timed_out,
     ))
+}
+
+fn terminate_process(child: &mut Child) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let process_group = format!("-{}", child.id());
+        let group_kill = Command::new("kill")
+            .args(["-KILL", "--", &process_group])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        if matches!(group_kill, Ok(status) if status.success()) {
+            return Ok(());
+        }
+    }
+
+    child.kill().context("failed to terminate target process")
+}
+
+#[cfg(unix)]
+struct InterruptionGuard {
+    received: Arc<AtomicBool>,
+    registrations: Vec<SigId>,
+}
+
+#[cfg(unix)]
+impl InterruptionGuard {
+    fn install() -> Result<Self> {
+        let received = Arc::new(AtomicBool::new(false));
+        let mut guard = Self {
+            received,
+            registrations: Vec::new(),
+        };
+        for signal in [SIGINT, SIGTERM, SIGHUP] {
+            guard.registrations.push(
+                signal_hook::flag::register_conditional_default(
+                    signal,
+                    Arc::clone(&guard.received),
+                )
+                .with_context(|| format!("failed to register signal {signal} fallback"))?,
+            );
+            guard.registrations.push(
+                signal_hook::flag::register(signal, Arc::clone(&guard.received))
+                    .with_context(|| format!("failed to register signal {signal} handler"))?,
+            );
+        }
+        Ok(guard)
+    }
+
+    fn received(&self) -> bool {
+        self.received.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for InterruptionGuard {
+    fn drop(&mut self) {
+        for registration in self.registrations.drain(..) {
+            signal_hook::low_level::unregister(registration);
+        }
+    }
 }
 
 fn resolve_working_directory(
@@ -187,6 +285,10 @@ fn read_resident_memory_kib(pid: u32) -> Option<u64> {
     })
 }
 
+pub(crate) fn resident_memory_sampling_supported() -> bool {
+    read_resident_memory_kib(std::process::id()).is_some()
+}
+
 #[must_use]
 pub fn statistics(values: &[f64]) -> Statistics {
     assert!(!values.is_empty(), "statistics require at least one sample");
@@ -225,5 +327,25 @@ mod tests {
         assert_eq!(result.mean, 2.5);
         assert_eq!(result.median, 2.5);
         assert_eq!(result.p95, 4.0);
+    }
+
+    #[test]
+    fn memory_metric_is_explicitly_observed_rss() {
+        let samples = [MeasurementSample {
+            iteration: 1,
+            duration_ms: 1.0,
+            max_rss_kib: Some(128),
+            exit_code: Some(0),
+            timed_out: false,
+            succeeded: true,
+        }];
+        let metrics = memory_metric_summaries(&samples);
+
+        assert_eq!(metrics.len(), 2);
+        assert_eq!(metrics[0].id, PROCESS_MAX_RSS_V1_ID);
+        assert_eq!(metrics[1].id, PROCESS_MAX_OBSERVED_RSS_ID);
+        assert_eq!(metrics[0].statistics, metrics[1].statistics);
+        assert_eq!(metrics[1].unit, "KiB");
+        assert_eq!(metrics[1].preferred_direction, PreferredDirection::Lower);
     }
 }

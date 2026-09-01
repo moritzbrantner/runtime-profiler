@@ -11,6 +11,8 @@ pub const ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0: &str =
     "runtime-profiler/environment-fingerprint/legacy-source-inclusive-v0";
 pub const ENVIRONMENT_FINGERPRINT_SCHEMA_V1: &str = "runtime-profiler/environment-fingerprint/v1";
 pub const METRICS_SCHEMA_V1: &str = "runtime-profiler/metrics/v1";
+pub const PROCESS_MAX_RSS_V1_ID: &str = "process.max_rss";
+pub const PROCESS_MAX_OBSERVED_RSS_ID: &str = "process.max_observed_rss";
 pub const HOTSPOTS_SCHEMA_V1: &str = "runtime-profiler/hotspots/v1";
 pub const GUIDANCE_SCHEMA_V1: &str = "runtime-profiler/agent-guidance/v1";
 

@@ -107,7 +107,8 @@ fn detect() -> DetectionReport {
         "process".to_owned(),
         Detection {
             available: true,
-            reason: "implemented: wall time, exit state, timeout, and Linux peak RSS".to_owned(),
+            reason: "implemented: wall time, exit state, timeout, and Linux maximum observed RSS"
+                .to_owned(),
         },
     );
     collectors.insert(
