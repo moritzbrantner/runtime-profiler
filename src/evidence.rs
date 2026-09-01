@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
@@ -24,8 +24,69 @@ pub struct AgentEvidenceReference {
     pub created_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub media_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_size_bytes",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub size_bytes: Option<serde_json::Number>,
+}
+
+fn deserialize_size_bytes<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<serde_json::Number>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let size = Option::<serde_json::Number>::deserialize(deserializer)?;
+    if let Some(number) = &size
+        && !is_nonnegative_integer(number)
+    {
+        return Err(serde::de::Error::custom(
+            "sizeBytes must be a non-negative integer",
+        ));
+    }
+    Ok(size)
+}
+
+fn is_nonnegative_integer(number: &serde_json::Number) -> bool {
+    let representation = number.to_string();
+    let (coefficient, exponent) = representation
+        .split_once(['e', 'E'])
+        .map_or((representation.as_str(), "0"), |parts| parts);
+    let unsigned_coefficient = coefficient.trim_start_matches('-');
+    if unsigned_coefficient
+        .bytes()
+        .all(|byte| byte == b'0' || byte == b'.')
+    {
+        return true;
+    }
+    if coefficient.starts_with('-') {
+        return false;
+    }
+
+    let exponent_is_negative = exponent.starts_with('-');
+    let exponent_digits = exponent.trim_start_matches(['+', '-']);
+    let exponent_magnitude = exponent_digits.parse::<usize>();
+    let fractional_digits = coefficient
+        .split_once('.')
+        .map_or(0, |(_, fraction)| fraction.len());
+    let trailing_zeroes = coefficient
+        .bytes()
+        .rev()
+        .filter(|byte| *byte != b'.')
+        .take_while(|byte| *byte == b'0')
+        .count();
+
+    match exponent_magnitude {
+        Ok(magnitude) if exponent_is_negative => fractional_digits
+            .checked_add(magnitude)
+            .is_some_and(|required| trailing_zeroes >= required),
+        Ok(magnitude) => magnitude
+            .checked_add(trailing_zeroes)
+            .is_none_or(|shifted| shifted >= fractional_digits),
+        Err(_) => !exponent_is_negative,
+    }
 }
 
 pub fn build_agent_evidence_reference(
@@ -134,6 +195,43 @@ mod tests {
             reference.size_bytes.as_ref().map(ToString::to_string),
             Some("18446744073709551616".to_owned())
         );
+    }
+
+    fn reference_json_with_size(size: &str) -> String {
+        format!(
+            r#"{{"schemaVersion":1,"kind":"runtime-profile-bundle","uri":"bundle://valid","digest":"sha256:{digest}","createdAt":"2026-08-15T04:00:00Z","sizeBytes":{size}}}"#,
+            digest = "a".repeat(64)
+        )
+    }
+
+    #[test]
+    fn rejects_contract_invalid_evidence_sizes() {
+        for size in ["-1", "1.5", "1e-1", "100.01e-2"] {
+            let result =
+                serde_json::from_str::<AgentEvidenceReference>(&reference_json_with_size(size));
+            assert!(result.is_err(), "size {size} should be rejected");
+        }
+    }
+
+    #[test]
+    fn accepts_schema_integer_number_forms() {
+        for size in [
+            "0",
+            "-0",
+            "1.0",
+            "10e2",
+            "100e-2",
+            "100.00e-2",
+            "18446744073709551616",
+        ] {
+            let result =
+                serde_json::from_str::<AgentEvidenceReference>(&reference_json_with_size(size));
+            assert!(
+                result.is_ok(),
+                "size {size} should be accepted: {:?}",
+                result.err()
+            );
+        }
     }
 
     #[test]
