@@ -27,6 +27,12 @@ The fingerprint input is deliberately limited to non-secret properties already
 recorded in the environment document; usernames, hostnames, repository paths,
 and environment-variable values are not added to it.
 
+`environment_fingerprint_schema_version` identifies the exact normalized input
+algorithm in both the environment document and bundle manifest. Its legacy
+default keeps bundles created before this field was added validatable while
+preventing evaluators from comparing legacy and current hashes as if they used
+the same algorithm.
+
 ## Statistical interpretation
 
 runtime-profiler reports samples and descriptive statistics. It does not infer
