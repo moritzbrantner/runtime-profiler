@@ -35,7 +35,7 @@ impl LoadedScenario {
                         measurements: vec![
                             "process.wall_time".to_owned(),
                             "process.success_rate".to_owned(),
-                            "process.max_rss".to_owned(),
+                            "process.max_observed_rss".to_owned(),
                         ],
                     },
                 })
