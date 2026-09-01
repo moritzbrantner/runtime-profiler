@@ -27,6 +27,12 @@ Before comparing baseline and candidate, a Moonlight runtime-profiler adapter mu
 
 Source revisions are expected to differ. Scenario digests are not.
 
+`environment_fingerprint` identifies the execution environment, not the source
+revision. Git SHA and dirty state are provenance fields and are deliberately
+excluded from the fingerprint input. A code-only baseline/candidate change on
+the same execution environment should therefore retain the same environment
+fingerprint; a relevant execution-environment change should not.
+
 ## Comparison strength
 
 | Condition | Maximum conclusion |
