@@ -7,6 +7,9 @@ pub const SCENARIO_SCHEMA_V1: &str = "runtime-profiler/scenario/v1";
 pub const SCENARIO_EVIDENCE_SCHEMA_V1: &str = "runtime-profiler/scenario-evidence/v1";
 pub const MANIFEST_SCHEMA_V1: &str = "runtime-profiler/bundle-manifest/v1";
 pub const ENVIRONMENT_SCHEMA_V1: &str = "runtime-profiler/environment/v1";
+pub const ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0: &str =
+    "runtime-profiler/environment-fingerprint/legacy-source-inclusive-v0";
+pub const ENVIRONMENT_FINGERPRINT_SCHEMA_V1: &str = "runtime-profiler/environment-fingerprint/v1";
 pub const METRICS_SCHEMA_V1: &str = "runtime-profiler/metrics/v1";
 pub const HOTSPOTS_SCHEMA_V1: &str = "runtime-profiler/hotspots/v1";
 pub const GUIDANCE_SCHEMA_V1: &str = "runtime-profiler/agent-guidance/v1";
@@ -121,6 +124,8 @@ pub struct TargetEvidence {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EnvironmentDocument {
     pub schema_version: String,
+    #[serde(default = "legacy_environment_fingerprint_schema_version")]
+    pub environment_fingerprint_schema_version: String,
     pub fingerprint: String,
     pub operating_system: String,
     pub architecture: String,
@@ -217,9 +222,15 @@ pub struct BundleManifest {
     pub created_unix_ms: u128,
     pub scenario_id: String,
     pub scenario_digest: String,
+    #[serde(default = "legacy_environment_fingerprint_schema_version")]
+    pub environment_fingerprint_schema_version: String,
     pub environment_fingerprint: String,
     pub source: SourceIdentity,
     pub files: Vec<ArtifactEntry>,
+}
+
+fn legacy_environment_fingerprint_schema_version() -> String {
+    ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0.to_owned()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

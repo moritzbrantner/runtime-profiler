@@ -39,6 +39,23 @@ The CLI is a thin adapter. `coding-tooling` may invoke the CLI through a declare
 semantic capability; first-class discovery should still call the same library
 or stable CLI rather than implement a second capture path.
 
+## Evidence identity
+
+Source identity and execution-environment identity are independent provenance
+axes. Git SHA and dirty state identify the code that produced a capture; they
+must not participate in `environment_fingerprint`, because source revisions are
+expected to differ between a baseline and a candidate. The environment
+fingerprint is derived only from normalized, non-source execution-environment
+properties such as OS, architecture, kernel release, and logical CPU count.
+
+The fingerprint input has its own version domain so future changes to which
+environment properties participate can be made deliberately without coupling
+them to source metadata or evaluator policy. Both `environment.json` and
+`manifest.json` publish `environment_fingerprint_schema_version`. Bundles that
+predate that additive field deserialize as the legacy source-inclusive
+algorithm, so consumers can distinguish them from source-independent v1
+fingerprints without invalidating existing artifacts.
+
 ## Immutability
 
 A capture refuses an existing output path. Evidence is never updated in place.

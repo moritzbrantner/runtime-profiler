@@ -10,9 +10,10 @@ use serde::Serialize;
 
 use crate::capture::capture_metrics;
 use crate::contract::{
-    AgentGuidance, AgentObservation, ArtifactEntry, BundleManifest, ENVIRONMENT_SCHEMA_V1,
-    EnvironmentDocument, GUIDANCE_SCHEMA_V1, HOTSPOTS_SCHEMA_V1, HotspotsDocument,
-    MANIFEST_SCHEMA_V1, METRICS_SCHEMA_V1, MetricSummary, MetricsDocument,
+    AgentGuidance, AgentObservation, ArtifactEntry, BundleManifest,
+    ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0, ENVIRONMENT_FINGERPRINT_SCHEMA_V1,
+    ENVIRONMENT_SCHEMA_V1, EnvironmentDocument, GUIDANCE_SCHEMA_V1, HOTSPOTS_SCHEMA_V1,
+    HotspotsDocument, MANIFEST_SCHEMA_V1, METRICS_SCHEMA_V1, MetricSummary, MetricsDocument,
     SCENARIO_EVIDENCE_SCHEMA_V1, ScenarioEvidence, SourceIdentity, ValidationReport,
 };
 use crate::digest::{sha256_bytes, sha256_file};
@@ -25,6 +26,14 @@ const ARTIFACTS: [(&str, &str); 5] = [
     ("hotspots.json", "application/json"),
     ("agent-guidance.json", "application/json"),
 ];
+#[derive(Serialize)]
+struct EnvironmentFingerprintInput<'a> {
+    schema_version: &'static str,
+    operating_system: &'a str,
+    architecture: &'a str,
+    kernel_release: &'a Option<String>,
+    logical_cpu_count: usize,
+}
 
 pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManifest> {
     ensure!(
@@ -75,6 +84,9 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         created_unix_ms,
         scenario_id: scenario.scenario.id,
         scenario_digest: scenario.digest,
+        environment_fingerprint_schema_version: environment
+            .environment_fingerprint_schema_version
+            .clone(),
         environment_fingerprint: environment.fingerprint,
         source: environment.source,
         files,
@@ -153,6 +165,20 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
     }
     if environment.fingerprint != manifest.environment_fingerprint {
         diagnostics.push("environment fingerprint does not match manifest".to_owned());
+    }
+    if environment.environment_fingerprint_schema_version
+        != manifest.environment_fingerprint_schema_version
+    {
+        diagnostics.push("environment fingerprint schema does not match manifest".to_owned());
+    }
+    if !matches!(
+        manifest.environment_fingerprint_schema_version.as_str(),
+        ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0 | ENVIRONMENT_FINGERPRINT_SCHEMA_V1
+    ) {
+        diagnostics.push(format!(
+            "unsupported environment fingerprint schema: {}",
+            manifest.environment_fingerprint_schema_version
+        ));
     }
 
     let guidance: AgentGuidance = read_json(&bundle.join("agent-guidance.json"))?;
@@ -266,6 +292,7 @@ fn detect_environment() -> Result<EnvironmentDocument> {
     };
     let mut environment = EnvironmentDocument {
         schema_version: ENVIRONMENT_SCHEMA_V1.to_owned(),
+        environment_fingerprint_schema_version: ENVIRONMENT_FINGERPRINT_SCHEMA_V1.to_owned(),
         fingerprint: String::new(),
         operating_system: env::consts::OS.to_owned(),
         architecture: env::consts::ARCH.to_owned(),
@@ -273,10 +300,20 @@ fn detect_environment() -> Result<EnvironmentDocument> {
         logical_cpu_count: thread_count(),
         source,
     };
-    let normalized =
-        serde_json::to_vec(&environment).context("failed to fingerprint environment")?;
-    environment.fingerprint = sha256_bytes(&normalized);
+    environment.fingerprint = environment_fingerprint(&environment)?;
     Ok(environment)
+}
+
+fn environment_fingerprint(environment: &EnvironmentDocument) -> Result<String> {
+    let input = EnvironmentFingerprintInput {
+        schema_version: ENVIRONMENT_FINGERPRINT_SCHEMA_V1,
+        operating_system: &environment.operating_system,
+        architecture: &environment.architecture,
+        kernel_release: &environment.kernel_release,
+        logical_cpu_count: environment.logical_cpu_count,
+    };
+    let normalized = serde_json::to_vec(&input).context("failed to fingerprint environment")?;
+    Ok(sha256_bytes(&normalized))
 }
 
 fn thread_count() -> usize {
@@ -322,11 +359,96 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
 mod tests {
     use super::*;
 
+    fn test_environment(source: SourceIdentity) -> EnvironmentDocument {
+        EnvironmentDocument {
+            schema_version: ENVIRONMENT_SCHEMA_V1.to_owned(),
+            environment_fingerprint_schema_version: ENVIRONMENT_FINGERPRINT_SCHEMA_V1.to_owned(),
+            fingerprint: String::new(),
+            operating_system: "linux".to_owned(),
+            architecture: "x86_64".to_owned(),
+            kernel_release: Some("6.12.0".to_owned()),
+            logical_cpu_count: 8,
+            source,
+        }
+    }
+
     #[test]
     fn rejects_unsafe_artifact_paths() {
         assert!(is_safe_relative_path("metrics.json"));
         assert!(!is_safe_relative_path("../metrics.json"));
         assert!(!is_safe_relative_path("/tmp/metrics.json"));
         assert!(!is_safe_relative_path("nested/../metrics.json"));
+    }
+
+    #[test]
+    fn environment_fingerprint_ignores_source_identity() {
+        let baseline = test_environment(SourceIdentity {
+            git_sha: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned()),
+            dirty: Some(false),
+        });
+        let candidate = test_environment(SourceIdentity {
+            git_sha: Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned()),
+            dirty: Some(true),
+        });
+
+        assert_eq!(
+            environment_fingerprint(&baseline).expect("baseline fingerprint"),
+            environment_fingerprint(&candidate).expect("candidate fingerprint")
+        );
+    }
+
+    #[test]
+    fn environment_fingerprint_changes_with_execution_environment() {
+        let baseline = test_environment(SourceIdentity {
+            git_sha: None,
+            dirty: None,
+        });
+        let mut candidate = baseline.clone();
+        candidate.logical_cpu_count = 16;
+
+        assert_ne!(
+            environment_fingerprint(&baseline).expect("baseline fingerprint"),
+            environment_fingerprint(&candidate).expect("candidate fingerprint")
+        );
+    }
+
+    #[test]
+    fn legacy_bundle_documents_get_an_explicit_fingerprint_schema() {
+        let legacy: EnvironmentDocument = serde_json::from_str(
+            r#"{
+  "schema_version": "runtime-profiler/environment/v1",
+  "fingerprint": "legacy-digest",
+  "operating_system": "linux",
+  "architecture": "x86_64",
+  "kernel_release": "6.12.0",
+  "logical_cpu_count": 8,
+  "source": { "git_sha": null, "dirty": null }
+}"#,
+        )
+        .expect("legacy environment document");
+
+        assert_eq!(
+            legacy.environment_fingerprint_schema_version,
+            ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0
+        );
+
+        let legacy_manifest: BundleManifest = serde_json::from_str(
+            r#"{
+  "schema_version": "runtime-profiler/bundle-manifest/v1",
+  "bundle_id": "legacy-bundle",
+  "created_unix_ms": 1,
+  "scenario_id": "legacy-scenario",
+  "scenario_digest": "legacy-scenario-digest",
+  "environment_fingerprint": "legacy-digest",
+  "source": { "git_sha": null, "dirty": null },
+  "files": []
+}"#,
+        )
+        .expect("legacy manifest");
+
+        assert_eq!(
+            legacy_manifest.environment_fingerprint_schema_version,
+            ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0
+        );
     }
 }
