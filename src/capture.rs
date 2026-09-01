@@ -285,6 +285,10 @@ fn read_resident_memory_kib(pid: u32) -> Option<u64> {
     })
 }
 
+pub(crate) fn resident_memory_sampling_supported() -> bool {
+    read_resident_memory_kib(std::process::id()).is_some()
+}
+
 #[must_use]
 pub fn statistics(values: &[f64]) -> Statistics {
     assert!(!values.is_empty(), "statistics require at least one sample");

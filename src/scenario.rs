@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 
+use crate::capture::resident_memory_sampling_supported;
 use crate::contract::{
     CapturePlan, Collector, CollectorPlan, PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID,
     SCENARIO_EVIDENCE_SCHEMA_V1, SCENARIO_SCHEMA_V1, Scenario, ScenarioEvidence, Target,
@@ -33,7 +34,7 @@ impl LoadedScenario {
                     Collector::Process => CollectorPlan {
                         id: "process".to_owned(),
                         supported: true,
-                        measurements: process_measurements(),
+                        measurements: process_measurements(resident_memory_sampling_supported()),
                     },
                 })
                 .collect(),
@@ -69,12 +70,12 @@ impl LoadedScenario {
     }
 }
 
-fn process_measurements() -> Vec<String> {
+fn process_measurements(rss_supported: bool) -> Vec<String> {
     let mut measurements = vec![
         "process.wall_time".to_owned(),
         "process.success_rate".to_owned(),
     ];
-    if cfg!(target_os = "linux") {
+    if rss_supported {
         measurements.extend([
             PROCESS_MAX_RSS_V1_ID.to_owned(),
             PROCESS_MAX_OBSERVED_RSS_ID.to_owned(),
@@ -208,22 +209,20 @@ mod tests {
     }
 
     #[test]
-    fn process_plan_advertises_only_platform_supported_measurements() {
-        let scenario = valid_scenario();
-        let normalized = serde_json::to_vec(&scenario).expect("serialize scenario");
-        let loaded = LoadedScenario {
-            scenario,
-            source_path: PathBuf::from("scenario.json"),
-            digest: sha256_bytes(&normalized),
-        };
-
-        let measurements = &loaded.plan().collectors[0].measurements;
-        let has_legacy_rss = measurements.iter().any(|id| id == PROCESS_MAX_RSS_V1_ID);
-        let has_observed_rss = measurements
-            .iter()
-            .any(|id| id == PROCESS_MAX_OBSERVED_RSS_ID);
-        assert_eq!(has_legacy_rss, cfg!(target_os = "linux"));
-        assert_eq!(has_observed_rss, cfg!(target_os = "linux"));
+    fn process_measurements_reflect_rss_capability() {
+        for (rss_supported, expected) in [(false, false), (true, true)] {
+            let measurements = process_measurements(rss_supported);
+            assert_eq!(
+                measurements.iter().any(|id| id == PROCESS_MAX_RSS_V1_ID),
+                expected
+            );
+            assert_eq!(
+                measurements
+                    .iter()
+                    .any(|id| id == PROCESS_MAX_OBSERVED_RSS_ID),
+                expected
+            );
+        }
     }
 
     #[test]
