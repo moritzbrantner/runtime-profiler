@@ -1,4 +1,4 @@
-import { validateBundleUrl } from "./validator.js";
+import { validateBundleUrl } from "./validator.mjs";
 
 const form = document.querySelector("form");
 const input = document.querySelector("#manifest");
