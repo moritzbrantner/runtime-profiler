@@ -1,4 +1,4 @@
-import { validateBundleUrl } from "../validator.js";
+import { validateBundleUrl } from "../validator.mjs";
 
 const output = document.querySelector("#output");
 const manifestUrl = new URL(location.href).searchParams.get("manifest");
