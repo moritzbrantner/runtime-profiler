@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Validate and inspect public runtime-profiler evidence bundles." />
+    <title>runtime-profiler · bundle inspector</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">runtime-profiler / agent evidence</p>
+      <h1>Inspect a public profiler bundle.</h1>
+      <p class="lede">
+        Validate the immutable artifact set, SHA-256 digests, v1 schemas, and cross-document
+        identities without executing the workload.
+      </p>
+      <form>
+        <label for="manifest">Public manifest.json URL</label>
+        <div class="row">
+          <input id="manifest" name="manifest" type="url" required placeholder="https://…/bundle/manifest.json" />
+          <button type="submit">Validate bundle</button>
+        </div>
+      </form>
+      <p id="status" role="status">The source host must allow browser CORS requests.</p>
+      <section id="result" hidden>
+        <div class="summary" id="summary"></div>
+        <div class="toolbar">
+          <h2>Machine-readable validation</h2>
+          <a id="machine-link" href="#">Open JSON view</a>
+        </div>
+        <pre id="output"></pre>
+      </section>
+      <aside>
+        <strong>Boundary:</strong> Pages validates existing evidence only. Capture remains a local
+        <code>runtime-profiler capture</code> operation.
+      </aside>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
