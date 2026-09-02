@@ -18,6 +18,16 @@ jobs:
       operation: findings
       report_path: .artifacts/coding-tooling/findings.json
 
+  tooling-fast:
+    name: Coding Tooling Fast
+    permissions:
+      contents: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@604f68a276c49ab557d40578fb7453fb964b4882
+    with:
+      operation: run
+      tier: fast
+      report_path: .artifacts/coding-tooling/fast.json
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -27,7 +37,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.0
         with:
           components: clippy, rustfmt
 
