@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "runtime-profiler",
+  "kind": "browser-evidence-validator",
+  "baseUrl": "https://moritzbrantner.github.io/runtime-profiler/",
+  "description": "Validate and inspect already captured public runtime-profiler evidence bundles without executing the workload.",
+  "operations": [
+    {
+      "id": "inspect-bundle",
+      "transport": "html",
+      "hrefTemplate": "https://moritzbrantner.github.io/runtime-profiler/?manifest={manifestUrl}",
+      "description": "Human-readable validation and evidence inspection. The manifest and artifacts must be publicly fetchable with browser CORS."
+    },
+    {
+      "id": "validate-bundle-json",
+      "transport": "browser-json-view",
+      "hrefTemplate": "https://moritzbrantner.github.io/runtime-profiler/validate.json/?manifest={manifestUrl}",
+      "description": "Browser-executed JSON validation report with artifact digests, schema checks, identity checks, metrics, and agent guidance."
+    }
+  ],
+  "authoritativeLocalOperations": [
+    "runtime-profiler detect",
+    "runtime-profiler plan --scenario <path>",
+    "runtime-profiler capture --scenario <path> --output <directory>",
+    "runtime-profiler validate --bundle <directory>",
+    "runtime-profiler summarize --bundle <directory> --json"
+  ],
+  "limitations": [
+    "GitHub Pages cannot capture or execute workloads.",
+    "The browser validator covers the public v1 bundle contract and SHA-256 artifact integrity; native validation remains authoritative.",
+    "A source host that blocks browser CORS cannot be inspected remotely."
+  ]
+}
