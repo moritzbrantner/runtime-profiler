@@ -50,8 +50,8 @@ jobs:
       - name: Check contracts
         run: python3 scripts/check_contracts.py
 
-      - name: Test Pages bundle validator
-        run: node --test tests/site_validator.test.mjs
+      - name: Test Pages and score-history JavaScript
+        run: node --test tests/*.test.mjs
 
       - name: Check formatting
         run: cargo fmt --check
