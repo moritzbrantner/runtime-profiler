@@ -6,7 +6,9 @@ pub mod contract;
 pub mod digest;
 pub mod evidence;
 pub mod scenario;
+pub mod score;
 
 pub use bundle::{capture_bundle, render_agent_guidance, summarize_bundle, validate_bundle};
 pub use evidence::{AgentEvidenceReference, build_agent_evidence_reference};
 pub use scenario::{LoadedScenario, load_scenario};
+pub use score::{RuntimeScoreDocument, score_bundles};
