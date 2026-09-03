@@ -3,12 +3,14 @@
 `runtime-profiler` captures reproducible runtime evidence for coding agents. It
 runs a declared scenario, records bounded measurements, and emits a versioned
 evidence bundle that evaluators can consume across a baseline and a candidate.
+It can also normalize two strictly comparable bundles into a descriptive 0–100
+reference-retention score without owning release policy.
 
-The project deliberately separates collection from evaluation:
+The project deliberately separates collection and descriptive normalization from policy evaluation:
 
-- **runtime-profiler** captures and validates runtime facts.
+- **runtime-profiler** captures and validates runtime facts and can summarize strictly comparable baseline/candidate evidence into a descriptive score.
 - **agent-contracts** defines the neutral cross-repository evidence reference used by the wider agent landscape.
-- **Moonlight** compares compatible baseline/candidate evidence and evaluates change; runtime-profiler does not own verdicts.
+- **Moonlight** owns project-specific thresholds, regression policy, and pass/fail evaluation; a runtime-profiler score is evidence, not a release verdict.
 - **coding-tooling** can invoke profiler scenarios through repository-declared deterministic capabilities; first-class profiler discovery belongs there rather than in this repository.
 - **coding-agent-conventions** defines how agents act on runtime evidence and performance policy.
 - **agent-loop-orchestrator** schedules capture/change/recapture work and stores evidence/evaluation references in durable run state.
@@ -19,14 +21,18 @@ The intended boundary is therefore:
 scenario + source revision
         |
         v
-runtime-profiler
+runtime-profiler capture
         |
         +--> immutable profiler bundle
         |
         +--> agent.evidence/v1 reference
-                    |
-                    v
-          orchestrator / evaluator
+
+compatible reference + candidate bundles
+        |
+        +--> runtime-profiler score (descriptive evidence)
+        |
+        v
+Moonlight / evaluator (project policy and verdict)
 ```
 
 The profiler-specific bundle remains the source artifact. `agent.evidence/v1`
@@ -45,7 +51,8 @@ The `0.1` foundation supports repeatable command scenarios and records:
 - source revision and a privacy-preserving environment fingerprint;
 - SHA-256 integrity for every evidence artifact;
 - deterministic JSON guidance sized for an agent context window;
-- optional `agent.evidence/v1` references for validated bundles crossing a component boundary.
+- optional `agent.evidence/v1` references for validated bundles crossing a component boundary;
+- descriptive reference-relative scoring for strictly comparable validated bundles.
 
 Linux resident memory is sampled from `VmRSS`; `process.max_observed_rss` is the
 largest sampled value and is deliberately not presented as an exact OS peak.
@@ -63,8 +70,9 @@ short-lived CLI installs interruption handling for its process lifetime so it
 can terminate and reap that group before exiting; library callers retain
 ownership of their embedding process's signal policy.
 
-It does **not** compare runs or claim that a candidate is better. That belongs
-to Moonlight or another evaluator.
+The score command does not define regression budgets, block changes, or claim a
+candidate should ship. Those policy decisions belong to Moonlight or another
+evaluator.
 
 ## Quick start
 
@@ -80,6 +88,15 @@ cargo run -- render-agent-guidance --bundle .runtime-profiler/example
 cargo run -- evidence-reference \
   --bundle .runtime-profiler/example \
   --uri .agent-loop/evidence/runtime-profiler/example
+```
+
+After capturing the same scenario on a comparable reference and candidate source revision:
+
+```bash
+cargo run -- score \
+  --reference .runtime-profiler/reference \
+  --candidate .runtime-profiler/candidate \
+  --json
 ```
 
 The first capture creates an immutable directory. Choose a new output directory
@@ -135,8 +152,8 @@ CLI and agent output remains bounded.
 
 The pinned external contract revision is documented in [`contracts/README.md`](contracts/README.md).
 
-See [Architecture](docs/architecture.md), [Moonlight contract](docs/moonlight.md),
-and the [Roadmap](ROADMAP.md) for the planned collector adapters.
+See [Architecture](docs/architecture.md), [Runtime scoring](docs/scoring.md),
+[Moonlight contract](docs/moonlight.md), and the [Roadmap](ROADMAP.md) for the planned collector adapters.
 
 ## Development
 
