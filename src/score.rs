@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::bundle::validate_bundle;
 use crate::contract::{
@@ -246,7 +246,10 @@ fn canonical_metrics(document: &MetricsDocument) -> Result<CanonicalMetrics> {
             "duplicate canonical metric id in metrics document"
         );
     }
-    ensure!(!metrics.is_empty(), "metrics document has no scoreable metrics");
+    ensure!(
+        !metrics.is_empty(),
+        "metrics document has no scoreable metrics"
+    );
     Ok(CanonicalMetrics { metrics, excluded })
 }
 
@@ -313,8 +316,8 @@ fn change_percent(reference: f64, candidate: f64, direction: PreferredDirection)
 fn average_score(scores: impl Iterator<Item = u8>) -> u8 {
     let scores: Vec<u8> = scores.collect();
     debug_assert!(!scores.is_empty());
-    (scores.iter().map(|score| u32::from(*score)).sum::<u32>() as f64 / scores.len() as f64)
-        .round() as u8
+    (scores.iter().map(|score| u32::from(*score)).sum::<u32>() as f64 / scores.len() as f64).round()
+        as u8
 }
 
 fn rating(score: u8) -> ScoreRating {
@@ -350,7 +353,12 @@ mod tests {
     ) -> MetricSummary {
         MetricSummary {
             id: id.to_owned(),
-            unit: if id == "process.success_rate" { "ratio" } else { "ms" }.to_owned(),
+            unit: if id == "process.success_rate" {
+                "ratio"
+            } else {
+                "ms"
+            }
+            .to_owned(),
             preferred_direction: direction,
             statistics: Statistics {
                 sample_count: 5,
@@ -382,8 +390,20 @@ mod tests {
     #[test]
     fn equal_runtime_evidence_scores_one_hundred() {
         let reference = document(vec![
-            metric("process.wall_time", PreferredDirection::Lower, 100.0, 100.0, 120.0),
-            metric("process.success_rate", PreferredDirection::Higher, 1.0, 1.0, 1.0),
+            metric(
+                "process.wall_time",
+                PreferredDirection::Lower,
+                100.0,
+                100.0,
+                120.0,
+            ),
+            metric(
+                "process.success_rate",
+                PreferredDirection::Higher,
+                1.0,
+                1.0,
+                1.0,
+            ),
         ]);
         let (metrics, _) = score_metrics(&reference, &reference).expect("score");
         assert!(metrics.iter().all(|metric| metric.score == 100));
@@ -394,19 +414,49 @@ mod tests {
         assert_eq!(retention_score(100.0, 125.0, PreferredDirection::Lower), 80);
         assert_eq!(retention_score(100.0, 80.0, PreferredDirection::Lower), 100);
         assert_eq!(retention_score(1.0, 0.8, PreferredDirection::Higher), 80);
-        assert_eq!(change_percent(100.0, 125.0, PreferredDirection::Lower), Some(-25.0));
-        assert_eq!(change_percent(100.0, 80.0, PreferredDirection::Lower), Some(20.0));
+        assert_eq!(
+            change_percent(100.0, 125.0, PreferredDirection::Lower),
+            Some(-25.0)
+        );
+        assert_eq!(
+            change_percent(100.0, 80.0, PreferredDirection::Lower),
+            Some(20.0)
+        );
     }
 
     #[test]
     fn success_rate_uses_mean_instead_of_binary_median() {
         let reference = document(vec![
-            metric("process.wall_time", PreferredDirection::Lower, 100.0, 100.0, 100.0),
-            metric("process.success_rate", PreferredDirection::Higher, 1.0, 1.0, 1.0),
+            metric(
+                "process.wall_time",
+                PreferredDirection::Lower,
+                100.0,
+                100.0,
+                100.0,
+            ),
+            metric(
+                "process.success_rate",
+                PreferredDirection::Higher,
+                1.0,
+                1.0,
+                1.0,
+            ),
         ]);
         let candidate = document(vec![
-            metric("process.wall_time", PreferredDirection::Lower, 100.0, 100.0, 100.0),
-            metric("process.success_rate", PreferredDirection::Higher, 0.8, 1.0, 1.0),
+            metric(
+                "process.wall_time",
+                PreferredDirection::Lower,
+                100.0,
+                100.0,
+                100.0,
+            ),
+            metric(
+                "process.success_rate",
+                PreferredDirection::Higher,
+                0.8,
+                1.0,
+                1.0,
+            ),
         ]);
         let (metrics, _) = score_metrics(&reference, &candidate).expect("score");
         let success = metrics
@@ -444,8 +494,20 @@ mod tests {
             100.0,
         )]);
         let candidate = document(vec![
-            metric("process.wall_time", PreferredDirection::Lower, 100.0, 100.0, 100.0),
-            metric("process.success_rate", PreferredDirection::Higher, 1.0, 1.0, 1.0),
+            metric(
+                "process.wall_time",
+                PreferredDirection::Lower,
+                100.0,
+                100.0,
+                100.0,
+            ),
+            metric(
+                "process.success_rate",
+                PreferredDirection::Higher,
+                1.0,
+                1.0,
+                1.0,
+            ),
         ]);
         assert!(score_metrics(&reference, &candidate).is_err());
     }
