@@ -67,6 +67,7 @@ jobs:
           cargo run --locked -- capture --scenario examples/command.yaml --output target/smoke-bundle
           cargo run --locked -- validate --bundle target/smoke-bundle
           cargo run --locked -- summarize --bundle target/smoke-bundle --json
+          cargo run --locked -- score --reference target/smoke-bundle --candidate target/smoke-bundle --json
           cargo run --locked -- render-agent-guidance --bundle target/smoke-bundle
           cargo run --locked -- evidence-reference --bundle target/smoke-bundle --uri .agent-loop/evidence/runtime-profiler/smoke-bundle > target/smoke-evidence-reference.json
           python3 scripts/check_contracts.py --evidence-reference target/smoke-evidence-reference.json
