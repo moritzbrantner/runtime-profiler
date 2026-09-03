@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runtime-profiler.local/schemas/score.schema.json",
+  "title": "runtime-profiler score v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "scenario_digest",
+    "environment_fingerprint_schema_version",
+    "environment_fingerprint",
+    "reference_bundle_id",
+    "candidate_bundle_id",
+    "reference_source",
+    "candidate_source",
+    "score",
+    "rating",
+    "metrics",
+    "excluded_metrics",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": { "const": "runtime-profiler/score/v1" },
+    "scenario_id": { "type": "string", "minLength": 1 },
+    "scenario_digest": { "type": "string", "minLength": 1 },
+    "environment_fingerprint_schema_version": { "type": "string", "minLength": 1 },
+    "environment_fingerprint": { "type": "string", "minLength": 1 },
+    "reference_bundle_id": { "type": "string", "minLength": 1 },
+    "candidate_bundle_id": { "type": "string", "minLength": 1 },
+    "reference_source": { "$ref": "#/$defs/source" },
+    "candidate_source": { "$ref": "#/$defs/source" },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "rating": { "enum": ["good", "needs-improvement", "poor"] },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/metricScore" }
+    },
+    "excluded_metrics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/excludedMetric" }
+    },
+    "notes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git_sha", "dirty"],
+      "properties": {
+        "git_sha": { "type": ["string", "null"] },
+        "dirty": { "type": ["boolean", "null"] }
+      }
+    },
+    "metricScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "unit", "preferred_direction", "score", "statistics"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "unit": { "type": "string", "minLength": 1 },
+        "preferred_direction": { "enum": ["lower", "higher"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "statistics": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/statisticScore" }
+        }
+      }
+    },
+    "statisticScore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statistic", "reference", "candidate", "change_percent", "score"],
+      "properties": {
+        "statistic": { "enum": ["mean", "median", "p95"] },
+        "reference": { "type": "number", "minimum": 0 },
+        "candidate": { "type": "number", "minimum": 0 },
+        "change_percent": { "type": ["number", "null"] },
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "excludedMetric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "reason"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

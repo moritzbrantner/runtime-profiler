@@ -112,6 +112,7 @@ def check_required_files() -> None:
         "schemas/bundle-manifest.schema.json",
         "schemas/environment.schema.json",
         "schemas/metrics.schema.json",
+        "schemas/score.schema.json",
         "schemas/hotspots.schema.json",
         "schemas/agent-guidance.schema.json",
     }
