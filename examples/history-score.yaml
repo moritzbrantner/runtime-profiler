@@ -1,0 +1,14 @@
+schema_version: runtime-profiler/scenario/v1
+id: runtime-profiler-history-score
+target:
+  type: command
+  program: sh
+  args:
+    - -c
+    - sleep 0.02
+run:
+  warmup_iterations: 3
+  measurement_iterations: 25
+  timeout_seconds: 30
+collectors:
+  - process
