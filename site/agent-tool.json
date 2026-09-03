@@ -16,6 +16,18 @@
       "transport": "browser-json-view",
       "hrefTemplate": "https://moritzbrantner.github.io/runtime-profiler/validate.json/?manifest={manifestUrl}",
       "description": "Browser-executed JSON validation report with artifact digests, schema checks, identity checks, metrics, and agent guidance."
+    },
+    {
+      "id": "runtime-score-history",
+      "transport": "html",
+      "href": "https://moritzbrantner.github.io/runtime-profiler/score/",
+      "description": "Human-readable first-parent runtime retention history for runtime-profiler main commits."
+    },
+    {
+      "id": "runtime-score-history-json",
+      "transport": "static-json",
+      "href": "https://raw.githubusercontent.com/moritzbrantner/runtime-profiler/score-history/history.json",
+      "description": "Versioned runtime-profiler/score-history/v1 parent-relative snapshots retained on the score-history branch."
     }
   ],
   "authoritativeLocalOperations": [
@@ -30,6 +42,7 @@
     "GitHub Pages cannot capture or execute workloads.",
     "The browser validator covers the public v1 bundle contract and SHA-256 artifact integrity; native validation remains authoritative.",
     "Reference-relative scoring requires native validation plus identical scenario and environment fingerprints; it does not define project regression policy.",
+    "Repository history scores each main commit against its first parent on the same runner; this is adjacent-revision retention, not an absolute performance index.",
     "A source host that blocks browser CORS cannot be inspected remotely."
   ]
 }
