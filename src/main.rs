@@ -8,8 +8,8 @@ use clap::{Parser, Subcommand};
 use runtime_profiler::capture::install_cli_interruption_handlers;
 use runtime_profiler::contract::{Detection, DetectionReport, MetricsDocument};
 use runtime_profiler::{
-    build_agent_evidence_reference, capture_bundle, load_scenario, render_agent_guidance,
-    summarize_bundle, validate_bundle,
+    RuntimeScoreDocument, build_agent_evidence_reference, capture_bundle, load_scenario,
+    render_agent_guidance, score_bundles, summarize_bundle, validate_bundle,
 };
 
 #[derive(Debug, Parser)]
@@ -48,6 +48,15 @@ enum Commands {
     Summarize {
         #[arg(long)]
         bundle: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Score a candidate bundle relative to a comparable reference bundle.
+    Score {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long)]
+        candidate: PathBuf,
         #[arg(long)]
         json: bool,
     },
@@ -91,6 +100,18 @@ fn main() -> Result<()> {
                 print_json(&metrics);
             } else {
                 print_summary(&metrics);
+            }
+        }
+        Commands::Score {
+            reference,
+            candidate,
+            json,
+        } => {
+            let score = score_bundles(&reference, &candidate)?;
+            if json {
+                print_json(&score);
+            } else {
+                print_score(&score);
             }
         }
         Commands::RenderAgentGuidance { bundle, output } => {
@@ -190,5 +211,27 @@ fn print_summary(metrics: &MetricsDocument) {
             metric.unit,
             metric.statistics.sample_count
         );
+    }
+}
+
+fn print_score(score: &RuntimeScoreDocument) {
+    println!("Scenario: {}", score.scenario_id);
+    println!("Runtime score: {}/100 ({:?})", score.score, score.rating);
+    for metric in &score.metrics {
+        println!("{}: {}/100", metric.id, metric.score);
+        for statistic in &metric.statistics {
+            let change = statistic
+                .change_percent
+                .map(|value| format!("{value:+.3}%"))
+                .unwrap_or_else(|| "n/a".to_owned());
+            println!(
+                "  {}: reference={:.3}, candidate={:.3}, change={}, score={}/100",
+                statistic.statistic,
+                statistic.reference,
+                statistic.candidate,
+                change,
+                statistic.score
+            );
+        }
     }
 }
