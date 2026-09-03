@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Historical parent-relative runtime-profiler retention scores by commit."
+    />
+    <title>runtime-profiler · score history</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <a href="../">runtime-profiler</a>
+      <span>runtime retention / history v1</span>
+    </header>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Runtime progression</p>
+        <div class="hero-row">
+          <div>
+            <h1><span id="latest-score">—</span><small>/100</small></h1>
+            <p id="latest-rating" class="lede">Loading the latest comparison…</p>
+          </div>
+          <div class="change-card">
+            <span>Average signed change</span>
+            <strong id="average-change">—</strong>
+          </div>
+        </div>
+        <p id="status" role="status">Loading runtime score history…</p>
+        <p class="muted">
+          Candidate <a id="latest-commit" href="https://github.com/moritzbrantner/runtime-profiler">—</a>
+          versus parent <a id="parent-commit" href="https://github.com/moritzbrantner/runtime-profiler">—</a>
+        </p>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <p class="eyebrow">Retention trend</p>
+          <h2>Last 60 comparable commits</h2>
+        </div>
+        <div class="chart-shell">
+          <svg
+            id="score-chart"
+            viewBox="0 0 720 240"
+            role="img"
+            aria-label="Parent-relative runtime retention score history from 0 to 100"
+          ></svg>
+        </div>
+        <p class="muted explanation">
+          A score of 100 means the candidate meets or beats its first parent on all scored runtime
+          evidence. Positive signed change means improvement; regressions reduce the retention score.
+        </p>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <p class="eyebrow">Latest evidence</p>
+          <h2>Metric breakdown</h2>
+        </div>
+        <div id="metrics" class="metric-list"></div>
+      </section>
+
+      <section>
+        <div class="section-heading">
+          <p class="eyebrow">Evidence trail</p>
+          <h2>Recent comparisons</h2>
+        </div>
+        <div class="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>Commit</th>
+                <th>Parent</th>
+                <th>Timestamp</th>
+                <th>Retention</th>
+                <th>Avg change</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <aside>
+        <strong>Measurement boundary:</strong> each history point rebuilds the candidate and its first
+        parent on the same GitHub runner and captures the same stable process scenario. Incomparable
+        revisions are retained as unavailable rather than converted into a synthetic score. This is a
+        descriptive runtime signal; release policy remains outside runtime-profiler.
+      </aside>
+    </main>
+    <footer>
+      <span>Same runner, same scenario, adjacent revisions.</span>
+      <a href="https://github.com/moritzbrantner/runtime-profiler">GitHub</a>
+    </footer>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

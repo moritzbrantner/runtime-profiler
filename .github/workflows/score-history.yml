@@ -1,0 +1,119 @@
+name: Publish Score History
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: runtime-profiler-score-history
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository history
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.98.0
+
+      - name: Measure current commit against first parent
+        id: measurement
+        shell: bash
+        run: |
+          parent_sha="$(git rev-parse "${GITHUB_SHA}^1")"
+          echo "parent_sha=$parent_sha" >> "$GITHUB_OUTPUT"
+          mkdir -p target
+
+          set +e
+          (
+            set -e
+            parent_dir="$RUNNER_TEMP/runtime-profiler-history-parent"
+            git worktree add --detach "$parent_dir" "$parent_sha"
+
+            cargo generate-lockfile
+            cargo build --release
+
+            (
+              cd "$parent_dir"
+              cargo generate-lockfile
+              cargo build --release
+              target/release/runtime-profiler capture \
+                --scenario "$GITHUB_WORKSPACE/examples/history-score.yaml" \
+                --output "$GITHUB_WORKSPACE/target/history-reference"
+            )
+
+            target/release/runtime-profiler capture \
+              --scenario examples/history-score.yaml \
+              --output target/history-candidate
+            target/release/runtime-profiler score \
+              --reference target/history-reference \
+              --candidate target/history-candidate \
+              --json > target/history-score.json
+          ) > target/history-measurement.log 2>&1
+          status=$?
+          set -e
+
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [[ "$status" -ne 0 ]]; then
+            {
+              echo "parent comparison failed with exit code $status"
+              tail -n 80 target/history-measurement.log
+            } > target/history-score-error.txt
+            rm -f target/history-score.json
+          fi
+
+      - name: Ensure history branch exists
+        shell: bash
+        run: |
+          if ! git ls-remote --exit-code --heads origin score-history >/dev/null 2>&1; then
+            git push origin "$GITHUB_SHA:refs/heads/score-history"
+          fi
+
+      - name: Check out history branch
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: score-history
+          path: .score-history
+          fetch-depth: 1
+
+      - name: Append runtime score snapshot
+        env:
+          PARENT_SHA: ${{ steps.measurement.outputs.parent_sha }}
+        shell: bash
+        run: |
+          commit_timestamp="$(git show -s --format=%cI "$GITHUB_SHA")"
+          args=(
+            node scripts/append-score-history.mjs
+            --history .score-history/history.json
+            --repository "$GITHUB_REPOSITORY"
+            --commit "$GITHUB_SHA"
+            --parent "$PARENT_SHA"
+            --timestamp "$commit_timestamp"
+          )
+          if [[ -f target/history-score.json ]]; then
+            args+=(--score target/history-score.json)
+          else
+            args+=(--reason-file target/history-score-error.txt)
+          fi
+          "${args[@]}"
+
+      - name: Publish history branch
+        shell: bash
+        run: |
+          git -C .score-history config user.name "github-actions[bot]"
+          git -C .score-history config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .score-history add history.json
+          if git -C .score-history diff --cached --quiet; then
+            exit 0
+          fi
+          git -C .score-history commit -m "score-history: ${GITHUB_SHA:0:12}"
+          git -C .score-history push origin HEAD:score-history
