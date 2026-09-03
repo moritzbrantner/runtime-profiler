@@ -23,11 +23,13 @@
     "runtime-profiler plan --scenario <path>",
     "runtime-profiler capture --scenario <path> --output <directory>",
     "runtime-profiler validate --bundle <directory>",
-    "runtime-profiler summarize --bundle <directory> --json"
+    "runtime-profiler summarize --bundle <directory> --json",
+    "runtime-profiler score --reference <directory> --candidate <directory> --json"
   ],
   "limitations": [
     "GitHub Pages cannot capture or execute workloads.",
     "The browser validator covers the public v1 bundle contract and SHA-256 artifact integrity; native validation remains authoritative.",
+    "Reference-relative scoring requires native validation plus identical scenario and environment fingerprints; it does not define project regression policy.",
     "A source host that blocks browser CORS cannot be inspected remotely."
   ]
 }
