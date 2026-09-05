@@ -187,7 +187,9 @@ fn detection_from_probe(
     if operating_system != "linux" {
         return Detection {
             available: false,
-            reason: format!("unsupported platform: native-perf requires Linux, found {operating_system}"),
+            reason: format!(
+                "unsupported platform: native-perf requires Linux, found {operating_system}"
+            ),
             tool_version: None,
         };
     }
@@ -393,7 +395,10 @@ fn optional_bounded_field(value: &str, field: &str) -> Result<Option<String>> {
     Ok(Some(value.to_owned()))
 }
 
-fn normalize_source_location(value: &str, root: Option<&Path>) -> Result<(Option<String>, Option<u32>)> {
+fn normalize_source_location(
+    value: &str,
+    root: Option<&Path>,
+) -> Result<(Option<String>, Option<u32>)> {
     let value = value.trim();
     if value.is_empty() || matches!(value, "??" | "??:0" | "[unknown]" | "[unknown]:0") {
         return Ok((None, None));
@@ -404,9 +409,11 @@ fn normalize_source_location(value: &str, root: Option<&Path>) -> Result<(Option
         MAX_FIELD_BYTES
     );
 
-    let (path, line) = value.rsplit_once(':').map_or((value, None), |(path, line)| {
-        (path, line.parse::<u32>().ok().filter(|line| *line > 0))
-    });
+    let (path, line) = value
+        .rsplit_once(':')
+        .map_or((value, None), |(path, line)| {
+            (path, line.parse::<u32>().ok().filter(|line| *line > 0))
+        });
     if path.is_empty() || path == "??" || path == "[unknown]" {
         return Ok((None, line));
     }
@@ -450,7 +457,10 @@ fn safe_relative_path(path: &Path) -> Option<String> {
 }
 
 fn source_root(loaded: &LoadedScenario) -> Option<PathBuf> {
-    let scenario_directory = loaded.source_path.parent().unwrap_or_else(|| Path::new("."));
+    let scenario_directory = loaded
+        .source_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
     match &loaded.scenario.target {
         Target::Command {
             working_directory: Some(directory),
@@ -505,7 +515,10 @@ fn create_temp_capture_directory() -> Result<TempCaptureDirectory> {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
                 return Err(error).with_context(|| {
-                    format!("failed to create native-perf temporary directory: {}", path.display())
+                    format!(
+                        "failed to create native-perf temporary directory: {}",
+                        path.display()
+                    )
                 });
             }
         }
@@ -562,8 +575,9 @@ mod tests {
     #[test]
     fn parser_aggregates_and_orders_hotspots_deterministically() {
         let report = "# header\n1\t100\t/src/main.rs:10\twork\texample\n2\t200\t/src/main.rs:10\twork\texample\n1\t300\t??:0\t[unknown]\t[unknown]\n1\t300\tsrc/lib.rs:20\talpha\texample\n";
-        let hotspots = parse_perf_report(report, &loaded_scenario(), "perf version test".to_owned())
-            .expect("parse report");
+        let hotspots =
+            parse_perf_report(report, &loaded_scenario(), "perf version test".to_owned())
+                .expect("parse report");
 
         assert_eq!(hotspots.total_weight, 900);
         assert_eq!(hotspots.total_samples, 5);
@@ -577,17 +591,25 @@ mod tests {
 
     #[test]
     fn parser_rejects_malformed_rows() {
-        let error = parse_perf_report("1\t2\ttoo-few\n", &loaded_scenario(), "perf test".to_owned())
-            .expect_err("malformed report must fail");
+        let error = parse_perf_report(
+            "1\t2\ttoo-few\n",
+            &loaded_scenario(),
+            "perf test".to_owned(),
+        )
+        .expect_err("malformed report must fail");
         assert!(error.to_string().contains("expected 5"));
     }
 
     #[test]
     fn source_paths_do_not_preserve_external_absolute_directories() {
-        let normalized = normalize_source_path(Path::new("/home/user/secret/file.rs"), Some(Path::new("/repo")));
+        let normalized = normalize_source_path(
+            Path::new("/home/user/secret/file.rs"),
+            Some(Path::new("/repo")),
+        );
         assert_eq!(normalized.as_deref(), Some("file.rs"));
         assert_eq!(
-            normalize_source_path(Path::new("/repo/src/lib.rs"), Some(Path::new("/repo"))).as_deref(),
+            normalize_source_path(Path::new("/repo/src/lib.rs"), Some(Path::new("/repo")))
+                .as_deref(),
             Some("src/lib.rs")
         );
         assert_eq!(normalize_source_path(Path::new("../escape.rs"), None), None);
