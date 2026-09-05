@@ -285,7 +285,8 @@ fn toolchain_fingerprint_from_version(version: &str) -> Result<String> {
         kind: TARGET_TOOLCHAIN_KIND,
         version: &normalized,
     };
-    let bytes = serde_json::to_vec(&input).context("failed to fingerprint target Rust toolchain")?;
+    let bytes =
+        serde_json::to_vec(&input).context("failed to fingerprint target Rust toolchain")?;
     Ok(sha256_bytes(&bytes))
 }
 
@@ -667,7 +668,10 @@ mod tests {
         assert_eq!(hotspots.total_samples, 5);
         assert_eq!(hotspots.hotspots.len(), 3);
         assert_eq!(hotspots.sample_period, Some(PERF_SAMPLE_PERIOD));
-        assert_eq!(hotspots.symbolization_mode.as_deref(), Some(SYMBOLIZATION_MODE));
+        assert_eq!(
+            hotspots.symbolization_mode.as_deref(),
+            Some(SYMBOLIZATION_MODE)
+        );
         assert_eq!(
             hotspots.target_toolchain_fingerprint.as_deref(),
             Some("toolchain-fingerprint")
