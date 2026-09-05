@@ -158,8 +158,12 @@ fn assess_recorded_identity(
         &mut missing,
     );
 
-    let reference_sample_period = reference_hotspots.sample_period.map(|value| value.to_string());
-    let candidate_sample_period = candidate_hotspots.sample_period.map(|value| value.to_string());
+    let reference_sample_period = reference_hotspots
+        .sample_period
+        .map(|value| value.to_string());
+    let candidate_sample_period = candidate_hotspots
+        .sample_period
+        .map(|value| value.to_string());
     compare_required(
         "sample period",
         reference_sample_period.as_deref(),
@@ -376,9 +380,8 @@ mod tests {
     fn different_toolchain_fingerprint_is_incomparable() {
         let reference = hotspots();
         let mut candidate = hotspots();
-        candidate.target_toolchain_fingerprint = Some(
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
-        );
+        candidate.target_toolchain_fingerprint =
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned());
 
         let assessment = assess_recorded_identity(&manifest(), &manifest(), &reference, &candidate);
         assert_eq!(assessment.status, HotspotComparabilityStatus::Incomparable);
