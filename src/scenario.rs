@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,6 +11,7 @@ use crate::contract::{
     TargetEvidence,
 };
 use crate::digest::sha256_bytes;
+use crate::native_perf;
 
 #[derive(Debug, Clone)]
 pub struct LoadedScenario {
@@ -35,7 +37,11 @@ impl LoadedScenario {
                         id: "process".to_owned(),
                         supported: true,
                         measurements: process_measurements(resident_memory_sampling_supported()),
+                        reason: None,
+                        tool_version: None,
+                        configuration: BTreeMap::new(),
                     },
+                    Collector::NativePerf => native_perf::collector_plan(),
                 })
                 .collect(),
             warmup_iterations: self.scenario.run.warmup_iterations,
@@ -151,6 +157,12 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         !scenario.collectors.is_empty(),
         "at least one collector is required"
     );
+    if scenario.collectors.contains(&Collector::NativePerf) {
+        ensure!(
+            scenario.collectors.contains(&Collector::Process),
+            "native-perf currently requires the process collector so runtime evidence remains comparable"
+        );
+    }
 
     let Target::Command {
         program,
@@ -206,6 +218,20 @@ mod tests {
     #[test]
     fn accepts_valid_scenario() {
         assert!(validate_scenario(&valid_scenario()).is_ok());
+    }
+
+    #[test]
+    fn accepts_native_perf_with_process_collector() {
+        let mut scenario = valid_scenario();
+        scenario.collectors.push(Collector::NativePerf);
+        assert!(validate_scenario(&scenario).is_ok());
+    }
+
+    #[test]
+    fn rejects_native_perf_without_process_collector() {
+        let mut scenario = valid_scenario();
+        scenario.collectors = vec![Collector::NativePerf];
+        assert!(validate_scenario(&scenario).is_err());
     }
 
     #[test]
