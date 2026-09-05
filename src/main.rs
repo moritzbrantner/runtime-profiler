@@ -143,6 +143,7 @@ fn detect() -> DetectionReport {
             available: true,
             reason: "implemented: wall time, exit state, timeout, and Linux maximum observed RSS"
                 .to_owned(),
+            tool_version: None,
         },
     );
     collectors.insert(
@@ -150,8 +151,8 @@ fn detect() -> DetectionReport {
         planned_detection("dotnet", "planned .NET EventPipe adapter"),
     );
     collectors.insert(
-        "native-perf".to_owned(),
-        planned_detection("perf", "planned native perf/pprof adapter"),
+        runtime_profiler::native_perf::COLLECTOR_ID.to_owned(),
+        runtime_profiler::native_perf::detect_native_perf(),
     );
     collectors.insert(
         "browser-playwright".to_owned(),
@@ -177,6 +178,7 @@ fn planned_detection(program: &str, adapter: &str) -> Detection {
                 "not detected"
             }
         ),
+        tool_version: None,
     }
 }
 
