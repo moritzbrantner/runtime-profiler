@@ -7,8 +7,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use crate::bundle::validate_bundle;
 use crate::contract::{BundleManifest, HotspotsDocument, SourceIdentity};
 
-pub const HOTSPOT_COMPARABILITY_SCHEMA_V1: &str =
-    "runtime-profiler/hotspot-comparability/v1";
+pub const HOTSPOT_COMPARABILITY_SCHEMA_V1: &str = "runtime-profiler/hotspot-comparability/v1";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -118,9 +117,8 @@ fn assess_recorded_identity(
     );
 
     if reference_hotspots.status != "collected" || candidate_hotspots.status != "collected" {
-        missing.push(
-            "both bundles must contain successfully collected hotspot evidence".to_owned(),
-        );
+        missing
+            .push("both bundles must contain successfully collected hotspot evidence".to_owned());
     }
 
     compare_required(
@@ -164,9 +162,8 @@ fn assess_recorded_identity(
     // may have been produced by different sampling or symbolization behavior.
     missing.push("sample-period identity is not recorded in hotspots/v1".to_owned());
     missing.push("symbolization-mode identity is not recorded in hotspots/v1".to_owned());
-    missing.push(
-        "independent target/toolchain fingerprint is not recorded in hotspots/v1".to_owned(),
-    );
+    missing
+        .push("independent target/toolchain fingerprint is not recorded in hotspots/v1".to_owned());
 
     if !mismatches.is_empty() {
         mismatches.extend(missing);
@@ -195,7 +192,10 @@ fn compare_required(
     mismatches: &mut Vec<String>,
     missing: &mut Vec<String>,
 ) {
-    match (reference.filter(|value| !value.is_empty()), candidate.filter(|value| !value.is_empty())) {
+    match (
+        reference.filter(|value| !value.is_empty()),
+        candidate.filter(|value| !value.is_empty()),
+    ) {
         (Some(reference), Some(candidate)) if reference == candidate => {}
         (Some(reference), Some(candidate)) => mismatches.push(format!(
             "{label} differs (reference={reference:?}, candidate={candidate:?})"
@@ -231,8 +231,8 @@ mod tests {
             created_unix_ms: 1,
             scenario_id: "scenario".to_owned(),
             scenario_digest: "scenario-digest".to_owned(),
-            environment_fingerprint_schema_version:
-                "runtime-profiler/environment-fingerprint/v1".to_owned(),
+            environment_fingerprint_schema_version: "runtime-profiler/environment-fingerprint/v1"
+                .to_owned(),
             environment_fingerprint: "environment".to_owned(),
             source: SourceIdentity {
                 git_sha: Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned()),
@@ -261,7 +261,8 @@ mod tests {
 
     #[test]
     fn matching_recorded_identity_is_insufficient_instead_of_guessed_comparable() {
-        let assessment = assess_recorded_identity(&manifest(), &manifest(), &hotspots(), &hotspots());
+        let assessment =
+            assess_recorded_identity(&manifest(), &manifest(), &hotspots(), &hotspots());
         assert_eq!(
             assessment.status,
             HotspotComparabilityStatus::InsufficientEvidence
@@ -285,7 +286,8 @@ mod tests {
         let reference_manifest = manifest();
         let mut candidate_manifest = manifest();
         candidate_manifest.environment_fingerprint = "other-environment".to_owned();
-        candidate_manifest.source.git_sha = Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned());
+        candidate_manifest.source.git_sha =
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned());
 
         let reference_hotspots = hotspots();
         let mut candidate_hotspots = hotspots();
@@ -316,7 +318,8 @@ mod tests {
     fn source_revision_difference_is_not_itself_an_incompatibility() {
         let reference_manifest = manifest();
         let mut candidate_manifest = manifest();
-        candidate_manifest.source.git_sha = Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned());
+        candidate_manifest.source.git_sha =
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned());
 
         let assessment = assess_recorded_identity(
             &reference_manifest,
