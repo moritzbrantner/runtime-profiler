@@ -11,7 +11,7 @@ use crate::contract::{
     TargetEvidence,
 };
 use crate::digest::sha256_bytes;
-use crate::native_perf;
+use crate::{http, native_perf};
 
 #[derive(Debug, Clone)]
 pub struct LoadedScenario {
@@ -27,7 +27,11 @@ impl LoadedScenario {
             schema_version: "runtime-profiler/plan/v1".to_owned(),
             scenario_id: self.scenario.id.clone(),
             scenario_digest: self.digest.clone(),
-            target_type: "command".to_owned(),
+            target_type: match self.scenario.target {
+                Target::Command { .. } => "command",
+                Target::Http { .. } => "http",
+            }
+            .to_owned(),
             collectors: self
                 .scenario
                 .collectors
@@ -42,6 +46,7 @@ impl LoadedScenario {
                         configuration: BTreeMap::new(),
                     },
                     Collector::NativePerf => native_perf::collector_plan(),
+                    Collector::Http => http::collector_plan(),
                 })
                 .collect(),
             warmup_iterations: self.scenario.run.warmup_iterations,
@@ -50,29 +55,37 @@ impl LoadedScenario {
         }
     }
 
-    #[must_use]
-    pub fn evidence(&self) -> ScenarioEvidence {
-        let Target::Command {
-            program,
-            args,
-            working_directory,
-            inherit_env,
-        } = &self.scenario.target;
-
-        ScenarioEvidence {
-            schema_version: SCENARIO_EVIDENCE_SCHEMA_V1.to_owned(),
-            id: self.scenario.id.clone(),
-            digest: self.digest.clone(),
-            target: TargetEvidence {
+    pub fn evidence(&self) -> Result<ScenarioEvidence> {
+        let target = match &self.scenario.target {
+            Target::Command {
+                program,
+                args,
+                working_directory,
+                inherit_env,
+            } => TargetEvidence {
                 target_type: "command".to_owned(),
-                program: program.clone(),
+                program: Some(program.clone()),
                 argument_count: args.len(),
                 working_directory_set: working_directory.is_some(),
                 inherited_environment_names: inherit_env.clone(),
+                http_origin: None,
+                http_method: None,
+                http_request_target_bytes: 0,
+                http_request_body_bytes: 0,
+                http_header_names: Vec::new(),
+                http_expected_statuses: Vec::new(),
             },
+            Target::Http { .. } => http::target_evidence(&self.scenario.target)?,
+        };
+
+        Ok(ScenarioEvidence {
+            schema_version: SCENARIO_EVIDENCE_SCHEMA_V1.to_owned(),
+            id: self.scenario.id.clone(),
+            digest: self.digest.clone(),
+            target,
             run: self.scenario.run.clone(),
             collectors: self.scenario.collectors.clone(),
-        }
+        })
     }
 }
 
@@ -157,39 +170,53 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         !scenario.collectors.is_empty(),
         "at least one collector is required"
     );
-    if scenario.collectors.contains(&Collector::NativePerf) {
-        ensure!(
-            scenario.collectors.contains(&Collector::Process),
-            "native-perf currently requires the process collector so runtime evidence remains comparable"
-        );
-    }
 
-    let Target::Command {
-        program,
-        args,
-        inherit_env,
-        ..
-    } = &scenario.target;
-    ensure!(
-        !program.trim().is_empty(),
-        "target program must not be empty"
-    );
-    ensure!(
-        !program.contains('\0'),
-        "target program contains a null byte"
-    );
-    if args.iter().any(|argument| argument.contains('\0')) {
-        bail!("target argument contains a null byte");
-    }
-    for name in inherit_env {
-        ensure!(
-            !name.is_empty(),
-            "inherited environment name must not be empty"
-        );
-        ensure!(
-            !name.contains('=') && !name.contains('\0'),
-            "invalid inherited environment name: {name}"
-        );
+    match &scenario.target {
+        Target::Command {
+            program,
+            args,
+            inherit_env,
+            ..
+        } => {
+            ensure!(
+                !scenario.collectors.contains(&Collector::Http),
+                "the HTTP collector requires an HTTP target"
+            );
+            if scenario.collectors.contains(&Collector::NativePerf) {
+                ensure!(
+                    scenario.collectors.contains(&Collector::Process),
+                    "native-perf currently requires the process collector so runtime evidence remains comparable"
+                );
+            }
+            ensure!(
+                !program.trim().is_empty(),
+                "target program must not be empty"
+            );
+            ensure!(
+                !program.contains('\0'),
+                "target program contains a null byte"
+            );
+            if args.iter().any(|argument| argument.contains('\0')) {
+                bail!("target argument contains a null byte");
+            }
+            for name in inherit_env {
+                ensure!(
+                    !name.is_empty(),
+                    "inherited environment name must not be empty"
+                );
+                ensure!(
+                    !name.contains('=') && !name.contains('\0'),
+                    "invalid inherited environment name: {name}"
+                );
+            }
+        }
+        Target::Http { .. } => {
+            ensure!(
+                scenario.collectors == [Collector::Http],
+                "HTTP scenarios require exactly the `http` collector"
+            );
+            http::validate_target(&scenario.target)?;
+        }
     }
 
     Ok(())
@@ -197,6 +224,8 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
     use crate::contract::{RunConfig, Target};
 
@@ -212,6 +241,22 @@ mod tests {
             },
             run: RunConfig::default(),
             collectors: vec![Collector::Process],
+        }
+    }
+
+    fn valid_http_scenario() -> Scenario {
+        Scenario {
+            schema_version: SCENARIO_SCHEMA_V1.to_owned(),
+            id: "http-unit-test".to_owned(),
+            target: Target::Http {
+                url: "http://127.0.0.1:8080/health".to_owned(),
+                method: "GET".to_owned(),
+                headers: BTreeMap::new(),
+                body: None,
+                expected_statuses: vec![200],
+            },
+            run: RunConfig::default(),
+            collectors: vec![Collector::Http],
         }
     }
 
@@ -231,6 +276,18 @@ mod tests {
     fn rejects_native_perf_without_process_collector() {
         let mut scenario = valid_scenario();
         scenario.collectors = vec![Collector::NativePerf];
+        assert!(validate_scenario(&scenario).is_err());
+    }
+
+    #[test]
+    fn accepts_http_with_only_http_collector() {
+        assert!(validate_scenario(&valid_http_scenario()).is_ok());
+    }
+
+    #[test]
+    fn rejects_http_with_process_collector() {
+        let mut scenario = valid_http_scenario();
+        scenario.collectors.push(Collector::Process);
         assert!(validate_scenario(&scenario).is_err());
     }
 
@@ -261,7 +318,9 @@ mod tests {
     #[test]
     fn redacts_arguments_from_evidence() {
         let mut scenario = valid_scenario();
-        let Target::Command { args, .. } = &mut scenario.target;
+        let Target::Command { args, .. } = &mut scenario.target else {
+            panic!("expected command scenario");
+        };
         args.push("secret-value".to_owned());
         let normalized = serde_json::to_vec(&scenario).expect("serialize scenario");
         let loaded = LoadedScenario {
@@ -270,8 +329,26 @@ mod tests {
             digest: sha256_bytes(&normalized),
         };
 
-        let evidence = serde_json::to_string(&loaded.evidence()).expect("serialize evidence");
+        let evidence = serde_json::to_string(&loaded.evidence().expect("scenario evidence"))
+            .expect("serialize evidence");
         assert!(!evidence.contains("secret-value"));
         assert!(evidence.contains("argument_count"));
+    }
+
+    #[test]
+    fn http_evidence_does_not_contain_request_target() {
+        let scenario = valid_http_scenario();
+        let normalized = serde_json::to_vec(&scenario).expect("serialize scenario");
+        let loaded = LoadedScenario {
+            scenario,
+            source_path: PathBuf::from("scenario.json"),
+            digest: sha256_bytes(&normalized),
+        };
+        let evidence = serde_json::to_string(&loaded.evidence().expect("HTTP scenario evidence"))
+            .expect("serialize evidence");
+
+        assert!(!evidence.contains("/health"));
+        assert!(evidence.contains("http_origin"));
+        assert!(evidence.contains("127.0.0.1:8080"));
     }
 }
