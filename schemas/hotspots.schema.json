@@ -9,6 +9,14 @@
     "schema_version": { "const": "runtime-profiler/hotspots/v1" },
     "status": { "enum": ["collected", "not-collected"] },
     "reason": { "type": "string" },
+    "collector": { "type": ["string", "null"] },
+    "tool_version": { "type": ["string", "null"] },
+    "event": { "type": ["string", "null"] },
+    "metric": { "type": ["string", "null"] },
+    "unit": { "type": ["string", "null"] },
+    "total_weight": { "type": "integer", "minimum": 0 },
+    "total_samples": { "type": "integer", "minimum": 0 },
+    "truncated": { "type": "boolean" },
     "hotspots": {
       "type": "array",
       "items": {
@@ -16,9 +24,16 @@
         "additionalProperties": false,
         "required": ["symbol", "source_file", "line", "evidence_ref"],
         "properties": {
+          "id": { "type": "string" },
           "symbol": { "type": "string", "minLength": 1 },
           "source_file": { "type": ["string", "null"] },
           "line": { "type": ["integer", "null"], "minimum": 1 },
+          "dso": { "type": ["string", "null"] },
+          "metric": { "type": "string" },
+          "unit": { "type": "string" },
+          "weight": { "type": "integer", "minimum": 0 },
+          "samples": { "type": "integer", "minimum": 0 },
+          "confidence": { "type": "string" },
           "evidence_ref": { "type": "string", "minLength": 1 }
         }
       }
