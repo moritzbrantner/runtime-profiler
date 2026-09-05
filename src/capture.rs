@@ -145,38 +145,26 @@ fn memory_metric_summaries(samples: &[MeasurementSample]) -> Vec<MetricSummary> 
 }
 
 fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSample> {
-    let Target::Command {
-        program,
-        args,
-        working_directory,
-        inherit_env,
-    } = &loaded.scenario.target;
+    let Target::Command { program, args, .. } = &loaded.scenario.target;
 
     let mut command = Command::new(program);
     command.args(args);
-    command.stdin(Stdio::null());
-    command.stdout(Stdio::null());
-    command.stderr(Stdio::null());
-    command.env_clear();
-    if let Some(path) = env::var_os("PATH") {
-        command.env("PATH", path);
-    }
-    for name in inherit_env {
-        if let Some(value) = env::var_os(name) {
-            command.env(name, value);
-        }
-    }
-    if let Some(directory) = resolve_working_directory(loaded, working_directory.as_deref()) {
-        command.current_dir(directory);
-    }
-    #[cfg(unix)]
-    command.process_group(0);
+    execute_prepared_command(loaded, command, iteration, program)
+}
+
+pub(crate) fn execute_prepared_command(
+    loaded: &LoadedScenario,
+    mut command: Command,
+    iteration: u32,
+    program_label: &str,
+) -> Result<MeasurementSample> {
+    prepare_target_environment(loaded, &mut command);
 
     ensure_not_interrupted()?;
     let start = Instant::now();
     let mut child = command
         .spawn()
-        .with_context(|| format!("failed to start target program: {program}"))?;
+        .with_context(|| format!("failed to start target program: {program_label}"))?;
     let timeout = Duration::from_secs(loaded.scenario.run.timeout_seconds);
     let mut max_observed_rss_kib = read_resident_memory_kib(child.id());
     let mut timed_out = false;
@@ -215,6 +203,32 @@ fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSa
         status,
         timed_out,
     ))
+}
+
+fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
+    let Target::Command {
+        working_directory,
+        inherit_env,
+        ..
+    } = &loaded.scenario.target;
+
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::null());
+    command.stderr(Stdio::null());
+    command.env_clear();
+    if let Some(path) = env::var_os("PATH") {
+        command.env("PATH", path);
+    }
+    for name in inherit_env {
+        if let Some(value) = env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    if let Some(directory) = resolve_working_directory(loaded, working_directory.as_deref()) {
+        command.current_dir(directory);
+    }
+    #[cfg(unix)]
+    command.process_group(0);
 }
 
 fn terminate_process(child: &mut Child) -> Result<()> {

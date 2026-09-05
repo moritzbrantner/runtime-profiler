@@ -21,6 +21,20 @@ test("browser validator accepts a coherent v1 bundle", async () => {
   assert.deepEqual(report.diagnostics, []);
 });
 
+test("browser validator accepts optional native perf evidence", async () => {
+  const fixture = await bundleFixture({ nativePerf: true });
+  const report = await validateBundleUrl(manifestUrl, {
+    fetchImpl: fakeFetch(fixture.responses),
+    cryptoImpl: webcrypto,
+  });
+
+  assert.equal(report.valid, true);
+  assert.equal(report.verified_files, 6);
+  assert.equal(report.evidence.hotspots.collector, "native-perf");
+  assert.equal(report.evidence.hotspots.hotspots[0].symbol, "example::work");
+  assert.deepEqual(report.diagnostics, []);
+});
+
 test("browser validator reports artifact corruption", async () => {
   const fixture = await bundleFixture();
   fixture.responses.set(
@@ -46,7 +60,7 @@ test("browser validator rejects escaping artifact paths", () => {
   assert.equal(isSafeRelativePath("nested\\metrics.json"), false);
 });
 
-async function bundleFixture() {
+async function bundleFixture({ nativePerf = false } = {}) {
   const documents = {
     "scenario.json": {
       schema_version: "runtime-profiler/scenario-evidence/v1",
@@ -54,7 +68,7 @@ async function bundleFixture() {
       digest: "scenario-digest",
       target: { target_type: "command" },
       run: { warmup_iterations: 1, measurement_iterations: 1, timeout_seconds: 30 },
-      collectors: ["process"],
+      collectors: nativePerf ? ["process", "native-perf"] : ["process"],
     },
     "environment.json": {
       schema_version: "runtime-profiler/environment/v1",
@@ -88,12 +102,41 @@ async function bundleFixture() {
         },
       ],
     },
-    "hotspots.json": {
-      schema_version: "runtime-profiler/hotspots/v1",
-      status: "not-collected",
-      reason: "fixture",
-      hotspots: [],
-    },
+    "hotspots.json": nativePerf
+      ? {
+          schema_version: "runtime-profiler/hotspots/v1",
+          status: "collected",
+          reason: "fixture",
+          collector: "native-perf",
+          tool_version: "perf version test",
+          event: "cycles:u",
+          metric: "native-perf.period",
+          unit: "event-count",
+          total_weight: 100000,
+          total_samples: 1,
+          truncated: false,
+          hotspots: [
+            {
+              id: "hotspot-fixture",
+              symbol: "example::work",
+              source_file: "src/lib.rs",
+              line: 10,
+              dso: "example",
+              metric: "native-perf.period",
+              unit: "event-count",
+              weight: 100000,
+              samples: 1,
+              confidence: "source-location",
+              evidence_ref: "hotspots.json#hotspot-fixture",
+            },
+          ],
+        }
+      : {
+          schema_version: "runtime-profiler/hotspots/v1",
+          status: "not-collected",
+          reason: "fixture",
+          hotspots: [],
+        },
     "agent-guidance.json": {
       schema_version: "runtime-profiler/agent-guidance/v1",
       scenario_id: "example",
@@ -111,6 +154,17 @@ async function bundleFixture() {
     files.push({
       path,
       media_type: "application/json",
+      sha256: await sha256(encoder.encode(text), webcrypto),
+    });
+  }
+
+  if (nativePerf) {
+    const path = "native-perf-report.tsv";
+    const text = "1\t100000\tsrc/lib.rs:10\texample::work\texample\n";
+    responses.set(`https://example.test/bundle/${path}`, text);
+    files.push({
+      path,
+      media_type: "text/tab-separated-values; charset=utf-8",
       sha256: await sha256(encoder.encode(text), webcrypto),
     });
   }

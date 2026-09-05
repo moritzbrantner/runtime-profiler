@@ -10,22 +10,28 @@ use serde::Serialize;
 
 use crate::capture::{capture_metrics, ensure_not_interrupted};
 use crate::contract::{
-    AgentGuidance, AgentObservation, ArtifactEntry, BundleManifest,
+    AgentGuidance, AgentObservation, ArtifactEntry, BundleManifest, Collector,
     ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0, ENVIRONMENT_FINGERPRINT_SCHEMA_V1,
     ENVIRONMENT_SCHEMA_V1, EnvironmentDocument, GUIDANCE_SCHEMA_V1, HOTSPOTS_SCHEMA_V1,
     HotspotsDocument, MANIFEST_SCHEMA_V1, METRICS_SCHEMA_V1, MetricSummary, MetricsDocument,
     SCENARIO_EVIDENCE_SCHEMA_V1, ScenarioEvidence, SourceIdentity, ValidationReport,
 };
 use crate::digest::{sha256_bytes, sha256_file};
+use crate::native_perf::{
+    COLLECTOR_ID as NATIVE_PERF_COLLECTOR_ID, RAW_REPORT_ARTIFACT, RAW_REPORT_MEDIA_TYPE,
+    capture_native_perf,
+};
 use crate::scenario::load_scenario;
 
-const ARTIFACTS: [(&str, &str); 5] = [
+const REQUIRED_ARTIFACTS: [(&str, &str); 5] = [
     ("scenario.json", "application/json"),
     ("environment.json", "application/json"),
     ("metrics.json", "application/json"),
     ("hotspots.json", "application/json"),
     ("agent-guidance.json", "application/json"),
 ];
+const OPTIONAL_ARTIFACTS: [(&str, &str); 1] = [(RAW_REPORT_ARTIFACT, RAW_REPORT_MEDIA_TYPE)];
+
 #[derive(Serialize)]
 struct EnvironmentFingerprintInput<'a> {
     schema_version: &'static str,
@@ -49,13 +55,35 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     ensure_not_interrupted()?;
     let metrics = capture_metrics(&scenario)?;
     ensure_not_interrupted()?;
-    let hotspots = HotspotsDocument {
-        schema_version: HOTSPOTS_SCHEMA_V1.to_owned(),
-        status: "not-collected".to_owned(),
-        reason: "No source-level profiler adapter was requested by this v1 scenario".to_owned(),
-        hotspots: Vec::new(),
+
+    let (hotspots, raw_native_perf_report) = if scenario
+        .scenario
+        .collectors
+        .contains(&Collector::NativePerf)
+    {
+        let capture = capture_native_perf(&scenario)?;
+        (capture.hotspots, Some(capture.raw_report))
+    } else {
+        (
+            HotspotsDocument {
+                schema_version: HOTSPOTS_SCHEMA_V1.to_owned(),
+                status: "not-collected".to_owned(),
+                reason: "No source-level profiler adapter was requested by this v1 scenario"
+                    .to_owned(),
+                collector: None,
+                tool_version: None,
+                event: None,
+                metric: None,
+                unit: None,
+                total_weight: 0,
+                total_samples: 0,
+                truncated: false,
+                hotspots: Vec::new(),
+            },
+            None,
+        )
     };
-    let guidance = build_guidance(&metrics);
+    let guidance = build_guidance(&metrics, &hotspots);
     ensure_not_interrupted()?;
 
     fs::create_dir_all(output)
@@ -71,14 +99,37 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     ensure_not_interrupted()?;
     write_json(&output.join("agent-guidance.json"), &guidance)?;
     ensure_not_interrupted()?;
+    if let Some(report) = &raw_native_perf_report {
+        fs::write(output.join(RAW_REPORT_ARTIFACT), report).with_context(|| {
+            format!(
+                "failed to write native-perf report: {}",
+                output.join(RAW_REPORT_ARTIFACT).display()
+            )
+        })?;
+    }
+    ensure_not_interrupted()?;
 
-    let mut files = Vec::with_capacity(ARTIFACTS.len());
-    for (path, media_type) in ARTIFACTS {
+    let mut files = Vec::with_capacity(
+        REQUIRED_ARTIFACTS.len()
+            + if raw_native_perf_report.is_some() {
+                1
+            } else {
+                0
+            },
+    );
+    for (path, media_type) in REQUIRED_ARTIFACTS {
         ensure_not_interrupted()?;
         files.push(ArtifactEntry {
             path: path.to_owned(),
             media_type: media_type.to_owned(),
             sha256: sha256_file(&output.join(path))?,
+        });
+    }
+    if raw_native_perf_report.is_some() {
+        files.push(ArtifactEntry {
+            path: RAW_REPORT_ARTIFACT.to_owned(),
+            media_type: RAW_REPORT_MEDIA_TYPE.to_owned(),
+            sha256: sha256_file(&output.join(RAW_REPORT_ARTIFACT))?,
         });
     }
     ensure_not_interrupted()?;
@@ -122,15 +173,7 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
 
     let mut diagnostics = Vec::new();
     let mut verified_files = 0;
-    let expected_paths: BTreeSet<&str> = ARTIFACTS.iter().map(|(path, _)| *path).collect();
-    let actual_paths: BTreeSet<&str> = manifest
-        .files
-        .iter()
-        .map(|artifact| artifact.path.as_str())
-        .collect();
-    if actual_paths != expected_paths {
-        diagnostics.push("manifest artifact set does not match the v1 contract".to_owned());
-    }
+    validate_artifact_set(&manifest, &mut diagnostics);
     for artifact in &manifest.files {
         if !is_safe_relative_path(&artifact.path) {
             diagnostics.push(format!("unsafe artifact path: {}", artifact.path));
@@ -209,6 +252,7 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
             hotspots.schema_version
         ));
     }
+    validate_hotspot_artifacts(&scenario, &manifest, &hotspots, &mut diagnostics);
 
     let report = ValidationReport {
         schema_version: "runtime-profiler/validation/v1".to_owned(),
@@ -219,6 +263,75 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
     };
 
     Ok(report)
+}
+
+fn validate_artifact_set(manifest: &BundleManifest, diagnostics: &mut Vec<String>) {
+    let required: BTreeSet<&str> = REQUIRED_ARTIFACTS.iter().map(|(path, _)| *path).collect();
+    let allowed: BTreeSet<&str> = REQUIRED_ARTIFACTS
+        .iter()
+        .chain(OPTIONAL_ARTIFACTS.iter())
+        .map(|(path, _)| *path)
+        .collect();
+    let actual: BTreeSet<&str> = manifest
+        .files
+        .iter()
+        .map(|artifact| artifact.path.as_str())
+        .collect();
+
+    if manifest.files.len() != actual.len() {
+        diagnostics.push("manifest contains duplicate artifact paths".to_owned());
+    }
+    if !required.is_subset(&actual) {
+        diagnostics.push("manifest is missing one or more required v1 artifacts".to_owned());
+    }
+    if !actual.is_subset(&allowed) {
+        diagnostics.push("manifest contains an unsupported v1 artifact".to_owned());
+    }
+}
+
+fn validate_hotspot_artifacts(
+    scenario: &ScenarioEvidence,
+    manifest: &BundleManifest,
+    hotspots: &HotspotsDocument,
+    diagnostics: &mut Vec<String>,
+) {
+    let native_requested = scenario.collectors.contains(&Collector::NativePerf);
+    let raw_report_present = manifest
+        .files
+        .iter()
+        .any(|artifact| artifact.path == RAW_REPORT_ARTIFACT);
+
+    if native_requested {
+        if hotspots.status != "collected"
+            || hotspots.collector.as_deref() != Some(NATIVE_PERF_COLLECTOR_ID)
+        {
+            diagnostics.push(
+                "native-perf scenario does not contain collected native-perf hotspot evidence"
+                    .to_owned(),
+            );
+        }
+        if !raw_report_present {
+            diagnostics
+                .push("native-perf scenario is missing its raw perf report artifact".to_owned());
+        }
+        if hotspots.tool_version.is_none() || hotspots.event.is_none() || hotspots.metric.is_none()
+        {
+            diagnostics.push(
+                "native-perf hotspot evidence is missing collector identity metadata".to_owned(),
+            );
+        }
+    } else {
+        if raw_report_present {
+            diagnostics.push(
+                "process-only scenario unexpectedly contains native-perf raw evidence".to_owned(),
+            );
+        }
+        if hotspots.status == "collected" || hotspots.collector.is_some() {
+            diagnostics.push(
+                "process-only scenario unexpectedly claims collected hotspot evidence".to_owned(),
+            );
+        }
+    }
 }
 
 pub fn summarize_bundle(bundle: &Path) -> Result<MetricsDocument> {
@@ -254,8 +367,8 @@ pub fn render_agent_guidance(bundle: &Path) -> Result<String> {
     Ok(output)
 }
 
-fn build_guidance(metrics: &MetricsDocument) -> AgentGuidance {
-    let observations = metrics
+fn build_guidance(metrics: &MetricsDocument, hotspots: &HotspotsDocument) -> AgentGuidance {
+    let mut observations: Vec<AgentObservation> = metrics
         .metrics
         .iter()
         .map(|metric| AgentObservation {
@@ -264,6 +377,30 @@ fn build_guidance(metrics: &MetricsDocument) -> AgentGuidance {
             evidence_ref: format!("metrics.json#{}", metric.id),
         })
         .collect();
+
+    if hotspots.status == "collected" {
+        observations.extend(hotspots.hotspots.iter().take(5).map(|hotspot| {
+            let location = match (&hotspot.source_file, hotspot.line) {
+                (Some(file), Some(line)) => format!(" at {file}:{line}"),
+                (Some(file), None) => format!(" in {file}"),
+                _ => String::new(),
+            };
+            AgentObservation {
+                id: hotspot.id.clone(),
+                summary: format!(
+                    "Observed {} hotspot `{}`{} with weight {} {} across {} samples ({})",
+                    hotspots.collector.as_deref().unwrap_or("profiler"),
+                    hotspot.symbol,
+                    location,
+                    hotspot.weight,
+                    hotspot.unit,
+                    hotspot.samples,
+                    hotspot.confidence
+                ),
+                evidence_ref: hotspot.evidence_ref.clone(),
+            }
+        }));
+    }
 
     AgentGuidance {
         schema_version: GUIDANCE_SCHEMA_V1.to_owned(),
@@ -275,6 +412,8 @@ fn build_guidance(metrics: &MetricsDocument) -> AgentGuidance {
             "Use Moonlight to compare a baseline and candidate with matching scenario digests."
                 .to_owned(),
             "Treat cross-environment comparisons as inconclusive unless policy explicitly permits them."
+                .to_owned(),
+            "Profiler hotspots are sampled-cost correlations, not proof of semantic root cause."
                 .to_owned(),
         ],
         evidence_refs: vec![
@@ -465,5 +604,21 @@ mod tests {
             legacy_manifest.environment_fingerprint_schema_version,
             ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0
         );
+    }
+
+    #[test]
+    fn legacy_hotspots_document_remains_readable() {
+        let hotspots: HotspotsDocument = serde_json::from_str(
+            r#"{
+  "schema_version": "runtime-profiler/hotspots/v1",
+  "status": "not-collected",
+  "reason": "legacy",
+  "hotspots": []
+}"#,
+        )
+        .expect("legacy hotspots");
+
+        assert_eq!(hotspots.total_samples, 0);
+        assert!(hotspots.collector.is_none());
     }
 }

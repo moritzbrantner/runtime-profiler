@@ -83,6 +83,7 @@ fn default_collectors() -> Vec<Collector> {
 #[serde(rename_all = "kebab-case")]
 pub enum Collector {
     Process,
+    NativePerf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -102,6 +103,12 @@ pub struct CollectorPlan {
     pub id: String,
     pub supported: bool,
     pub measurements: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_version: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub configuration: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -190,14 +197,44 @@ pub struct HotspotsDocument {
     pub schema_version: String,
     pub status: String,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collector: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metric: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
+    #[serde(default)]
+    pub total_weight: u64,
+    #[serde(default)]
+    pub total_samples: u64,
+    #[serde(default)]
+    pub truncated: bool,
     pub hotspots: Vec<Hotspot>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Hotspot {
+    #[serde(default)]
+    pub id: String,
     pub symbol: String,
     pub source_file: Option<String>,
     pub line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dso: Option<String>,
+    #[serde(default)]
+    pub metric: String,
+    #[serde(default)]
+    pub unit: String,
+    #[serde(default)]
+    pub weight: u64,
+    #[serde(default)]
+    pub samples: u64,
+    #[serde(default)]
+    pub confidence: String,
     pub evidence_ref: String,
 }
 
@@ -262,4 +299,6 @@ pub struct DetectionReport {
 pub struct Detection {
     pub available: bool,
     pub reason: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_version: Option<String>,
 }
