@@ -18,10 +18,25 @@
     "collectors": {
       "type": "array",
       "minItems": 1,
-      "items": { "enum": ["process"] },
+      "items": { "enum": ["process", "native-perf"] },
       "default": ["process"]
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "collectors": { "contains": { "const": "native-perf" } }
+        },
+        "required": ["collectors"]
+      },
+      "then": {
+        "properties": {
+          "collectors": { "contains": { "const": "process" } }
+        }
+      }
+    }
+  ],
   "$defs": {
     "commandTarget": {
       "type": "object",
