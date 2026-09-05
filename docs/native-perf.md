@@ -36,6 +36,23 @@ A successful native capture adds:
 
 The raw report is evidence, not prompt text. Source locations are made repository-relative when safely resolvable; external absolute paths are not used as stable hotspot identities.
 
+## Comparability
+
+Use the dedicated comparability report before interpreting baseline/candidate hotspot distributions:
+
+```bash
+cargo run -- compare-hotspots \
+  --reference .runtime-profiler/reference \
+  --candidate .runtime-profiler/candidate \
+  --json
+```
+
+This check is separate from `score`. It never produces a performance score or a release verdict.
+
+The report compares the identity that current bundles actually record: scenario/workload digest, environment-fingerprint schema and value, collector identity, `perf` version, event, metric, and unit. A real mismatch is `incomparable`. Source Git revisions may differ because baseline and candidate code are expected to differ.
+
+The current `hotspots/v1` artifact does not yet persist every identity required for a strong comparison: sample-period identity, symbolization mode, and an independent target/toolchain fingerprint are still missing. Until those fields are recorded, otherwise matching native captures are reported as `insufficient-evidence` rather than being guessed comparable. A later contract enrichment can promote matching evidence to `comparable` without changing runtime-score semantics.
+
 ## Interpretation
 
 `native-perf.period` is event-count evidence derived from the sampled event period. It is not milliseconds. Hotspot weights from a different event, collector configuration, workload, tool/runtime fingerprint, or symbolization mode must not be treated as directly comparable.
