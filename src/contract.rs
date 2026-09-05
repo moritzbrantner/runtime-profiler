@@ -207,6 +207,16 @@ pub struct HotspotsDocument {
     pub metric: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sample_period: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symbolization_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_toolchain_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_toolchain_fingerprint_schema_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_toolchain_fingerprint: Option<String>,
     #[serde(default)]
     pub total_weight: u64,
     #[serde(default)]

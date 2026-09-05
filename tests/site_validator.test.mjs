@@ -31,8 +31,23 @@ test("browser validator accepts optional native perf evidence", async () => {
   assert.equal(report.valid, true);
   assert.equal(report.verified_files, 6);
   assert.equal(report.evidence.hotspots.collector, "native-perf");
+  assert.equal(report.evidence.hotspots.sample_period, 100000);
+  assert.equal(report.evidence.hotspots.target_toolchain_kind, "rustc");
   assert.equal(report.evidence.hotspots.hotspots[0].symbol, "example::work");
   assert.deepEqual(report.diagnostics, []);
+});
+
+test("browser validator rejects partial native toolchain identity", async () => {
+  const fixture = await bundleFixture({ nativePerf: true, partialToolchain: true });
+  const report = await validateBundleUrl(manifestUrl, {
+    fetchImpl: fakeFetch(fixture.responses),
+    cryptoImpl: webcrypto,
+  });
+
+  assert.equal(report.valid, false);
+  assert.ok(
+    report.diagnostics.includes("native-perf target toolchain identity is only partially recorded"),
+  );
 });
 
 test("browser validator reports artifact corruption", async () => {
@@ -60,7 +75,53 @@ test("browser validator rejects escaping artifact paths", () => {
   assert.equal(isSafeRelativePath("nested\\metrics.json"), false);
 });
 
-async function bundleFixture({ nativePerf = false } = {}) {
+async function bundleFixture({ nativePerf = false, partialToolchain = false } = {}) {
+  const nativeHotspots = nativePerf
+    ? {
+        schema_version: "runtime-profiler/hotspots/v1",
+        status: "collected",
+        reason: "fixture",
+        collector: "native-perf",
+        tool_version: "perf version test",
+        event: "cycles:u",
+        metric: "native-perf.period",
+        unit: "event-count",
+        sample_period: 100000,
+        symbolization_mode: "perf-report-srcline",
+        target_toolchain_kind: "rustc",
+        target_toolchain_fingerprint_schema_version:
+          "runtime-profiler/target-toolchain-fingerprint/rustc-v1",
+        target_toolchain_fingerprint:
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        total_weight: 100000,
+        total_samples: 1,
+        truncated: false,
+        hotspots: [
+          {
+            id: "hotspot-fixture",
+            symbol: "example::work",
+            source_file: "src/lib.rs",
+            line: 10,
+            dso: "example",
+            metric: "native-perf.period",
+            unit: "event-count",
+            weight: 100000,
+            samples: 1,
+            confidence: "source-location",
+            evidence_ref: "hotspots.json#hotspot-fixture",
+          },
+        ],
+      }
+    : {
+        schema_version: "runtime-profiler/hotspots/v1",
+        status: "not-collected",
+        reason: "fixture",
+        hotspots: [],
+      };
+  if (partialToolchain && nativePerf) {
+    delete nativeHotspots.target_toolchain_fingerprint;
+  }
+
   const documents = {
     "scenario.json": {
       schema_version: "runtime-profiler/scenario-evidence/v1",
@@ -102,41 +163,7 @@ async function bundleFixture({ nativePerf = false } = {}) {
         },
       ],
     },
-    "hotspots.json": nativePerf
-      ? {
-          schema_version: "runtime-profiler/hotspots/v1",
-          status: "collected",
-          reason: "fixture",
-          collector: "native-perf",
-          tool_version: "perf version test",
-          event: "cycles:u",
-          metric: "native-perf.period",
-          unit: "event-count",
-          total_weight: 100000,
-          total_samples: 1,
-          truncated: false,
-          hotspots: [
-            {
-              id: "hotspot-fixture",
-              symbol: "example::work",
-              source_file: "src/lib.rs",
-              line: 10,
-              dso: "example",
-              metric: "native-perf.period",
-              unit: "event-count",
-              weight: 100000,
-              samples: 1,
-              confidence: "source-location",
-              evidence_ref: "hotspots.json#hotspot-fixture",
-            },
-          ],
-        }
-      : {
-          schema_version: "runtime-profiler/hotspots/v1",
-          status: "not-collected",
-          reason: "fixture",
-          hotspots: [],
-        },
+    "hotspots.json": nativeHotspots,
     "agent-guidance.json": {
       schema_version: "runtime-profiler/agent-guidance/v1",
       scenario_id: "example",

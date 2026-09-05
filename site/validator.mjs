@@ -185,9 +185,31 @@ export function validateDocuments(manifest, documents, diagnostics = []) {
       hotspots?.collector !== "native-perf" ||
       !hotspots?.tool_version ||
       !hotspots?.event ||
-      !hotspots?.metric
+      !hotspots?.metric ||
+      !hotspots?.unit ||
+      !Number.isInteger(hotspots?.sample_period) ||
+      hotspots.sample_period <= 0 ||
+      !hotspots?.symbolization_mode
     ) {
       diagnostics.push("native-perf scenario does not contain complete native-perf hotspot evidence");
+    }
+    const toolchainFields = [
+      hotspots?.target_toolchain_kind,
+      hotspots?.target_toolchain_fingerprint_schema_version,
+      hotspots?.target_toolchain_fingerprint,
+    ];
+    const toolchainFieldsPresent = toolchainFields.map((value) => Boolean(value));
+    if (
+      toolchainFieldsPresent.some((present) => present) &&
+      !toolchainFieldsPresent.every((present) => present)
+    ) {
+      diagnostics.push("native-perf target toolchain identity is only partially recorded");
+    }
+    if (
+      hotspots?.target_toolchain_fingerprint &&
+      !/^[a-f0-9]{64}$/.test(hotspots.target_toolchain_fingerprint)
+    ) {
+      diagnostics.push("native-perf target toolchain fingerprint is malformed");
     }
     if (!rawPerfPresent) {
       diagnostics.push("native-perf scenario is missing its raw perf report artifact");

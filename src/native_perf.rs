@@ -6,6 +6,7 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail, ensure};
+use serde::Serialize;
 
 use crate::capture::execute_prepared_command;
 use crate::contract::{
@@ -19,6 +20,10 @@ pub const METRIC_ID: &str = "native-perf.period";
 pub const METRIC_UNIT: &str = "event-count";
 pub const PERF_EVENT: &str = "cycles:u";
 pub const PERF_SAMPLE_PERIOD: u64 = 100_000;
+pub const SYMBOLIZATION_MODE: &str = "perf-report-srcline";
+pub const TARGET_TOOLCHAIN_KIND: &str = "rustc";
+pub const TARGET_TOOLCHAIN_FINGERPRINT_SCHEMA_V1: &str =
+    "runtime-profiler/target-toolchain-fingerprint/rustc-v1";
 pub const RAW_REPORT_ARTIFACT: &str = "native-perf-report.tsv";
 pub const RAW_REPORT_MEDIA_TYPE: &str = "text/tab-separated-values; charset=utf-8";
 
@@ -26,6 +31,7 @@ const MAX_REPORT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_REPORT_LINES: usize = 100_000;
 const MAX_FIELD_BYTES: usize = 2_048;
 const MAX_HOTSPOTS: usize = 256;
+const MAX_TOOLCHAIN_VERSION_BYTES: usize = 4 * 1024;
 
 #[derive(Debug)]
 pub struct NativePerfCapture {
@@ -39,6 +45,13 @@ struct HotspotKey {
     source_file: Option<String>,
     line: Option<u32>,
     dso: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TargetToolchainFingerprintInput<'a> {
+    schema_version: &'static str,
+    kind: &'static str,
+    version: &'a str,
 }
 
 #[derive(Debug)]
@@ -69,7 +82,11 @@ pub fn collector_plan() -> CollectorPlan {
     let mut configuration = BTreeMap::new();
     configuration.insert("event".to_owned(), PERF_EVENT.to_owned());
     configuration.insert("sample_period".to_owned(), PERF_SAMPLE_PERIOD.to_string());
-    configuration.insert("symbolization".to_owned(), "perf-report-srcline".to_owned());
+    configuration.insert("symbolization".to_owned(), SYMBOLIZATION_MODE.to_owned());
+    configuration.insert(
+        "target_toolchain_fingerprint_schema".to_owned(),
+        TARGET_TOOLCHAIN_FINGERPRINT_SCHEMA_V1.to_owned(),
+    );
 
     CollectorPlan {
         id: COLLECTOR_ID.to_owned(),
@@ -91,6 +108,7 @@ pub fn capture_native_perf(loaded: &LoadedScenario) -> Result<NativePerfCapture>
     let tool_version = detection
         .tool_version
         .context("native-perf collector did not report a perf version")?;
+    let target_toolchain_fingerprint = detect_target_toolchain_fingerprint()?;
 
     let temp = create_temp_capture_directory()?;
     let perf_data = temp.path.join("perf.data");
@@ -142,7 +160,12 @@ pub fn capture_native_perf(loaded: &LoadedScenario) -> Result<NativePerfCapture>
         MAX_REPORT_BYTES
     );
     let raw_report = String::from_utf8(report.stdout).context("perf report output is not UTF-8")?;
-    let hotspots = parse_perf_report(&raw_report, loaded, tool_version)?;
+    let hotspots = parse_perf_report(
+        &raw_report,
+        loaded,
+        tool_version,
+        target_toolchain_fingerprint,
+    )?;
 
     Ok(NativePerfCapture {
         hotspots,
@@ -221,10 +244,57 @@ fn detection_from_probe(
     }
 }
 
+fn detect_target_toolchain_fingerprint() -> Result<Option<String>> {
+    let output = match Command::new("rustc")
+        .args(["--version", "--verbose"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).context("failed to inspect target Rust toolchain"),
+    };
+    if !output.status.success() {
+        return Ok(None);
+    }
+    ensure!(
+        output.stdout.len() <= MAX_TOOLCHAIN_VERSION_BYTES,
+        "rustc version output exceeds the {} byte safety limit",
+        MAX_TOOLCHAIN_VERSION_BYTES
+    );
+    let version = String::from_utf8(output.stdout).context("rustc version output is not UTF-8")?;
+    toolchain_fingerprint_from_version(&version).map(Some)
+}
+
+fn toolchain_fingerprint_from_version(version: &str) -> Result<String> {
+    let normalized = version
+        .lines()
+        .map(str::trim_end)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    ensure!(!normalized.is_empty(), "rustc version output is empty");
+    ensure!(
+        normalized.len() <= MAX_TOOLCHAIN_VERSION_BYTES,
+        "rustc version output exceeds the {} byte safety limit",
+        MAX_TOOLCHAIN_VERSION_BYTES
+    );
+    let input = TargetToolchainFingerprintInput {
+        schema_version: TARGET_TOOLCHAIN_FINGERPRINT_SCHEMA_V1,
+        kind: TARGET_TOOLCHAIN_KIND,
+        version: &normalized,
+    };
+    let bytes =
+        serde_json::to_vec(&input).context("failed to fingerprint target Rust toolchain")?;
+    Ok(sha256_bytes(&bytes))
+}
+
 fn parse_perf_report(
     report: &str,
     loaded: &LoadedScenario,
     tool_version: String,
+    target_toolchain_fingerprint: Option<String>,
 ) -> Result<HotspotsDocument> {
     ensure!(
         report.len() <= MAX_REPORT_BYTES,
@@ -343,6 +413,12 @@ fn parse_perf_report(
             hotspots.len()
         )
     };
+    let target_toolchain_kind = target_toolchain_fingerprint
+        .as_ref()
+        .map(|_| TARGET_TOOLCHAIN_KIND.to_owned());
+    let target_toolchain_fingerprint_schema_version = target_toolchain_fingerprint
+        .as_ref()
+        .map(|_| TARGET_TOOLCHAIN_FINGERPRINT_SCHEMA_V1.to_owned());
 
     Ok(HotspotsDocument {
         schema_version: HOTSPOTS_SCHEMA_V1.to_owned(),
@@ -353,6 +429,11 @@ fn parse_perf_report(
         event: Some(PERF_EVENT.to_owned()),
         metric: Some(METRIC_ID.to_owned()),
         unit: Some(METRIC_UNIT.to_owned()),
+        sample_period: Some(PERF_SAMPLE_PERIOD),
+        symbolization_mode: Some(SYMBOLIZATION_MODE.to_owned()),
+        target_toolchain_kind,
+        target_toolchain_fingerprint_schema_version,
+        target_toolchain_fingerprint,
         total_weight,
         total_samples,
         truncated,
@@ -575,13 +656,26 @@ mod tests {
     #[test]
     fn parser_aggregates_and_orders_hotspots_deterministically() {
         let report = "# header\n1\t100\t/src/main.rs:10\twork\texample\n2\t200\t/src/main.rs:10\twork\texample\n1\t300\t??:0\t[unknown]\t[unknown]\n1\t300\tsrc/lib.rs:20\talpha\texample\n";
-        let hotspots =
-            parse_perf_report(report, &loaded_scenario(), "perf version test".to_owned())
-                .expect("parse report");
+        let hotspots = parse_perf_report(
+            report,
+            &loaded_scenario(),
+            "perf version test".to_owned(),
+            Some("toolchain-fingerprint".to_owned()),
+        )
+        .expect("parse report");
 
         assert_eq!(hotspots.total_weight, 900);
         assert_eq!(hotspots.total_samples, 5);
         assert_eq!(hotspots.hotspots.len(), 3);
+        assert_eq!(hotspots.sample_period, Some(PERF_SAMPLE_PERIOD));
+        assert_eq!(
+            hotspots.symbolization_mode.as_deref(),
+            Some(SYMBOLIZATION_MODE)
+        );
+        assert_eq!(
+            hotspots.target_toolchain_fingerprint.as_deref(),
+            Some("toolchain-fingerprint")
+        );
         assert_eq!(hotspots.hotspots[0].symbol, "[unknown]");
         assert_eq!(hotspots.hotspots[1].symbol, "alpha");
         assert_eq!(hotspots.hotspots[2].symbol, "work");
@@ -595,9 +689,30 @@ mod tests {
             "1\t2\ttoo-few\n",
             &loaded_scenario(),
             "perf test".to_owned(),
+            Some("toolchain-fingerprint".to_owned()),
         )
         .expect_err("malformed report must fail");
         assert!(error.to_string().contains("expected 5"));
+    }
+
+    #[test]
+    fn target_toolchain_fingerprint_is_deterministic_and_version_sensitive() {
+        let first = toolchain_fingerprint_from_version(
+            "rustc 1.98.0\nbinary: rustc\ncommit-hash: abc\nhost: x86_64-unknown-linux-gnu\n",
+        )
+        .expect("fingerprint");
+        let same = toolchain_fingerprint_from_version(
+            "rustc 1.98.0\nbinary: rustc\ncommit-hash: abc\nhost: x86_64-unknown-linux-gnu\n\n",
+        )
+        .expect("fingerprint");
+        let changed = toolchain_fingerprint_from_version(
+            "rustc 1.99.0\nbinary: rustc\ncommit-hash: def\nhost: x86_64-unknown-linux-gnu\n",
+        )
+        .expect("fingerprint");
+
+        assert_eq!(first, same);
+        assert_ne!(first, changed);
+        assert_eq!(first.len(), 64);
     }
 
     #[test]

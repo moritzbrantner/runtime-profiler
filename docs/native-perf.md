@@ -30,9 +30,12 @@ The collector profiles the same target argv, working directory, inherited enviro
 A successful native capture adds:
 
 - normalized, deterministic entries to `hotspots.json`;
-- the collector version, event, metric identity, totals, and truncation state;
+- the collector version, event, metric identity, sample period, symbolization mode, totals, and truncation state;
+- a privacy-preserving target Rust toolchain fingerprint when `rustc --version --verbose` is available;
 - `native-perf-report.tsv` as a raw integrity-checked bundle artifact;
 - at most a small top set of hotspot observations to agent guidance.
+
+The target-toolchain fingerprint is a SHA-256 digest over a versioned normalized Rust compiler identity. Raw `rustc` output is not stored. If `rustc` is unavailable, native hotspot capture remains valid descriptive evidence, but strict hotspot comparison remains insufficient because the target toolchain cannot be proven compatible.
 
 The raw report is evidence, not prompt text. Source locations are made repository-relative when safely resolvable; external absolute paths are not used as stable hotspot identities.
 
@@ -49,9 +52,18 @@ cargo run -- compare-hotspots \
 
 This check is separate from `score`. It never produces a performance score or a release verdict.
 
-The report compares the identity that current bundles actually record: scenario/workload digest, environment-fingerprint schema and value, collector identity, `perf` version, event, metric, and unit. A real mismatch is `incomparable`. Source Git revisions may differ because baseline and candidate code are expected to differ.
+A report is `comparable` only when both bundles validate and the following identity matches:
 
-The current `hotspots/v1` artifact does not yet persist every identity required for a strong comparison: sample-period identity, symbolization mode, and an independent target/toolchain fingerprint are still missing. Until those fields are recorded, otherwise matching native captures are reported as `insufficient-evidence` rather than being guessed comparable. A later contract enrichment can promote matching evidence to `comparable` without changing runtime-score semantics.
+- scenario/workload id and digest;
+- environment-fingerprint schema and value;
+- collector identity and `perf` version;
+- event, metric, unit, and sample period;
+- symbolization mode;
+- target toolchain kind, fingerprint schema, and fingerprint.
+
+Source Git revisions may differ because baseline and candidate code are expected to differ. A real identity mismatch is `incomparable`. Missing required comparison identity is `insufficient-evidence`; it is never promoted to green by assumption.
+
+For the current native-Rust slice, target toolchain identity uses the ambient `rustc --version --verbose` contract. This is deliberately separate from the scenario digest: the scenario identifies the workload and target command shape, while the toolchain fingerprint identifies the compiler/runtime context expected to remain stable across a baseline/candidate code change.
 
 ## Interpretation
 

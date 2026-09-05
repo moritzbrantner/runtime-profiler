@@ -75,6 +75,11 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
                 event: None,
                 metric: None,
                 unit: None,
+                sample_period: None,
+                symbolization_mode: None,
+                target_toolchain_kind: None,
+                target_toolchain_fingerprint_schema_version: None,
+                target_toolchain_fingerprint: None,
                 total_weight: 0,
                 total_samples: 0,
                 truncated: false,
@@ -314,11 +319,34 @@ fn validate_hotspot_artifacts(
             diagnostics
                 .push("native-perf scenario is missing its raw perf report artifact".to_owned());
         }
-        if hotspots.tool_version.is_none() || hotspots.event.is_none() || hotspots.metric.is_none()
+        if hotspots.tool_version.is_none()
+            || hotspots.event.is_none()
+            || hotspots.metric.is_none()
+            || hotspots.unit.is_none()
+            || hotspots.sample_period.is_none()
+            || hotspots.symbolization_mode.is_none()
         {
             diagnostics.push(
-                "native-perf hotspot evidence is missing collector identity metadata".to_owned(),
+                "native-perf hotspot evidence is missing collector comparability metadata"
+                    .to_owned(),
             );
+        }
+        let toolchain_fields_present = [
+            hotspots.target_toolchain_kind.is_some(),
+            hotspots
+                .target_toolchain_fingerprint_schema_version
+                .is_some(),
+            hotspots.target_toolchain_fingerprint.is_some(),
+        ];
+        if toolchain_fields_present.iter().any(|present| *present)
+            && !toolchain_fields_present.iter().all(|present| *present)
+        {
+            diagnostics.push(
+                "native-perf target toolchain identity is only partially recorded".to_owned(),
+            );
+        }
+        if hotspots.sample_period == Some(0) {
+            diagnostics.push("native-perf sample period must be positive".to_owned());
         }
     } else {
         if raw_report_present {
@@ -620,5 +648,7 @@ mod tests {
 
         assert_eq!(hotspots.total_samples, 0);
         assert!(hotspots.collector.is_none());
+        assert!(hotspots.sample_period.is_none());
+        assert!(hotspots.target_toolchain_fingerprint.is_none());
     }
 }
