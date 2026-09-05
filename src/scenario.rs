@@ -76,7 +76,13 @@ impl LoadedScenario {
                 http_header_names: Vec::new(),
                 http_expected_statuses: Vec::new(),
             },
-            Target::Http { .. } => http::target_evidence(&self.scenario.target),
+            Target::Http {
+                url,
+                method,
+                headers,
+                body,
+                expected_statuses,
+            } => http_target_evidence(url, method, headers, body.as_deref(), expected_statuses),
         };
 
         ScenarioEvidence {
@@ -87,6 +93,35 @@ impl LoadedScenario {
             run: self.scenario.run.clone(),
             collectors: self.scenario.collectors.clone(),
         }
+    }
+}
+
+fn http_target_evidence(
+    url: &str,
+    method: &str,
+    headers: &BTreeMap<String, String>,
+    body: Option<&str>,
+    expected_statuses: &[u16],
+) -> TargetEvidence {
+    let rest = url.strip_prefix("http://").unwrap_or(url);
+    let authority_end = rest
+        .find(|character| matches!(character, '/' | '?'))
+        .unwrap_or(rest.len());
+    let origin = format!("http://{}", &rest[..authority_end]);
+    let request_target_bytes = rest.len().saturating_sub(authority_end).max(1);
+
+    TargetEvidence {
+        target_type: "http".to_owned(),
+        program: None,
+        argument_count: 0,
+        working_directory_set: false,
+        inherited_environment_names: Vec::new(),
+        http_origin: Some(origin),
+        http_method: Some(method.to_owned()),
+        http_request_target_bytes: request_target_bytes,
+        http_request_body_bytes: body.map_or(0, str::len),
+        http_header_names: headers.keys().cloned().collect(),
+        http_expected_statuses: expected_statuses.to_vec(),
     }
 }
 
