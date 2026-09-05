@@ -1,10 +1,11 @@
-const EXPECTED_ARTIFACTS = new Map([
+const EXPECTED_DOCUMENT_ARTIFACTS = new Map([
   ["scenario.json", "runtime-profiler/scenario-evidence/v1"],
   ["environment.json", "runtime-profiler/environment/v1"],
   ["metrics.json", "runtime-profiler/metrics/v1"],
   ["hotspots.json", "runtime-profiler/hotspots/v1"],
   ["agent-guidance.json", "runtime-profiler/agent-guidance/v1"],
 ]);
+const OPTIONAL_ARTIFACTS = new Set(["native-perf-report.tsv"]);
 
 const MANIFEST_SCHEMA = "runtime-profiler/bundle-manifest/v1";
 const FINGERPRINT_SCHEMAS = new Set([
@@ -38,9 +39,13 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
   }
 
   const declaredPaths = new Set((manifest.files ?? []).map((artifact) => artifact.path));
-  const expectedPaths = new Set(EXPECTED_ARTIFACTS.keys());
-  if (!sameSet(declaredPaths, expectedPaths)) {
-    diagnostics.push("manifest artifact set does not match the v1 contract");
+  const requiredPaths = new Set(EXPECTED_DOCUMENT_ARTIFACTS.keys());
+  const allowedPaths = new Set([...requiredPaths, ...OPTIONAL_ARTIFACTS]);
+  if (![...requiredPaths].every((path) => declaredPaths.has(path))) {
+    diagnostics.push("manifest is missing one or more required v1 artifacts");
+  }
+  if (![...declaredPaths].every((path) => allowedPaths.has(path))) {
+    diagnostics.push("manifest contains an unsupported v1 artifact");
   }
 
   for (const artifact of manifest.files ?? []) {
@@ -76,6 +81,9 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
 
     verifiedFiles += 1;
     status.verified = true;
+    if (!EXPECTED_DOCUMENT_ARTIFACTS.has(artifact.path)) {
+      continue;
+    }
     try {
       documents[artifact.path] = JSON.parse(new TextDecoder().decode(bytes));
     } catch {
@@ -120,7 +128,7 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
 }
 
 export function validateDocuments(manifest, documents, diagnostics = []) {
-  for (const [path, expectedSchema] of EXPECTED_ARTIFACTS) {
+  for (const [path, expectedSchema] of EXPECTED_DOCUMENT_ARTIFACTS) {
     const document = documents[path];
     if (!document) continue;
     if (document.schema_version !== expectedSchema) {
@@ -164,6 +172,35 @@ export function validateDocuments(manifest, documents, diagnostics = []) {
     diagnostics.push("agent guidance identity is incompatible with manifest");
   }
 
+  const hotspots = documents["hotspots.json"];
+  const nativeRequested = Array.isArray(scenario?.collectors)
+    ? scenario.collectors.includes("native-perf")
+    : false;
+  const rawPerfPresent = Array.isArray(manifest.files)
+    ? manifest.files.some((artifact) => artifact.path === "native-perf-report.tsv")
+    : false;
+  if (nativeRequested) {
+    if (
+      hotspots?.status !== "collected" ||
+      hotspots?.collector !== "native-perf" ||
+      !hotspots?.tool_version ||
+      !hotspots?.event ||
+      !hotspots?.metric
+    ) {
+      diagnostics.push("native-perf scenario does not contain complete native-perf hotspot evidence");
+    }
+    if (!rawPerfPresent) {
+      diagnostics.push("native-perf scenario is missing its raw perf report artifact");
+    }
+  } else {
+    if (rawPerfPresent) {
+      diagnostics.push("process-only scenario unexpectedly contains native-perf raw evidence");
+    }
+    if (hotspots?.status === "collected" || hotspots?.collector) {
+      diagnostics.push("process-only scenario unexpectedly claims collected hotspot evidence");
+    }
+  }
+
   return diagnostics;
 }
 
@@ -180,8 +217,4 @@ export function isSafeRelativePath(path) {
   }
   const segments = path.split("/");
   return !segments.some((segment) => !segment || segment === "." || segment === "..");
-}
-
-function sameSet(left, right) {
-  return left.size === right.size && [...left].every((value) => right.has(value));
 }
