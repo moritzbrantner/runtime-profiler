@@ -59,7 +59,8 @@ pub fn compare_hotspot_bundles(
         notes: vec![
             "Hotspot comparability is independent from runtime score; this command never produces a performance verdict.".to_owned(),
             "Source revisions may differ. Scenario/workload and execution-environment identity must remain compatible.".to_owned(),
-            "The current hotspots/v1 artifact records collector, perf version, event, metric, unit, scenario digest, and environment fingerprint, but not yet sample-period, symbolization-mode, or independent target/toolchain fingerprints. Matching current bundles therefore remain insufficient evidence rather than being guessed comparable.".to_owned(),
+            "Comparable native evidence requires matching collector/tool, event and sample period, symbolization mode, and target toolchain fingerprint in addition to scenario and environment identity.".to_owned(),
+            "Native captures without a target Rust toolchain fingerprint remain valid descriptive evidence but are insufficient for strict hotspot comparison.".to_owned(),
         ],
     })
 }
@@ -157,13 +158,47 @@ fn assess_recorded_identity(
         &mut missing,
     );
 
-    // These are deliberate fail-closed gaps in hotspots/v1. Do not infer them
-    // from the current runtime-profiler implementation, because an old bundle
-    // may have been produced by different sampling or symbolization behavior.
-    missing.push("sample-period identity is not recorded in hotspots/v1".to_owned());
-    missing.push("symbolization-mode identity is not recorded in hotspots/v1".to_owned());
-    missing
-        .push("independent target/toolchain fingerprint is not recorded in hotspots/v1".to_owned());
+    let reference_sample_period = reference_hotspots.sample_period.map(|value| value.to_string());
+    let candidate_sample_period = candidate_hotspots.sample_period.map(|value| value.to_string());
+    compare_required(
+        "sample period",
+        reference_sample_period.as_deref(),
+        candidate_sample_period.as_deref(),
+        &mut mismatches,
+        &mut missing,
+    );
+    compare_required(
+        "symbolization mode",
+        reference_hotspots.symbolization_mode.as_deref(),
+        candidate_hotspots.symbolization_mode.as_deref(),
+        &mut mismatches,
+        &mut missing,
+    );
+    compare_required(
+        "target toolchain kind",
+        reference_hotspots.target_toolchain_kind.as_deref(),
+        candidate_hotspots.target_toolchain_kind.as_deref(),
+        &mut mismatches,
+        &mut missing,
+    );
+    compare_required(
+        "target toolchain fingerprint schema",
+        reference_hotspots
+            .target_toolchain_fingerprint_schema_version
+            .as_deref(),
+        candidate_hotspots
+            .target_toolchain_fingerprint_schema_version
+            .as_deref(),
+        &mut mismatches,
+        &mut missing,
+    );
+    compare_required(
+        "target toolchain fingerprint",
+        reference_hotspots.target_toolchain_fingerprint.as_deref(),
+        candidate_hotspots.target_toolchain_fingerprint.as_deref(),
+        &mut mismatches,
+        &mut missing,
+    );
 
     if !mismatches.is_empty() {
         mismatches.extend(missing);
@@ -252,6 +287,15 @@ mod tests {
             event: Some("cycles:u".to_owned()),
             metric: Some("native-perf.period".to_owned()),
             unit: Some("event-count".to_owned()),
+            sample_period: Some(100_000),
+            symbolization_mode: Some("perf-report-srcline".to_owned()),
+            target_toolchain_kind: Some("rustc".to_owned()),
+            target_toolchain_fingerprint_schema_version: Some(
+                "runtime-profiler/target-toolchain-fingerprint/rustc-v1".to_owned(),
+            ),
+            target_toolchain_fingerprint: Some(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            ),
             total_weight: 100,
             total_samples: 1,
             truncated: false,
@@ -260,9 +304,22 @@ mod tests {
     }
 
     #[test]
-    fn matching_recorded_identity_is_insufficient_instead_of_guessed_comparable() {
+    fn matching_complete_identity_is_comparable() {
         let assessment =
             assess_recorded_identity(&manifest(), &manifest(), &hotspots(), &hotspots());
+        assert_eq!(assessment.status, HotspotComparabilityStatus::Comparable);
+        assert!(assessment.reasons.is_empty());
+    }
+
+    #[test]
+    fn missing_toolchain_identity_is_insufficient_instead_of_guessed_comparable() {
+        let reference = hotspots();
+        let mut candidate = hotspots();
+        candidate.target_toolchain_kind = None;
+        candidate.target_toolchain_fingerprint_schema_version = None;
+        candidate.target_toolchain_fingerprint = None;
+
+        let assessment = assess_recorded_identity(&manifest(), &manifest(), &reference, &candidate);
         assert_eq!(
             assessment.status,
             HotspotComparabilityStatus::InsufficientEvidence
@@ -271,13 +328,7 @@ mod tests {
             assessment
                 .reasons
                 .iter()
-                .any(|reason| reason.contains("sample-period"))
-        );
-        assert!(
-            assessment
-                .reasons
-                .iter()
-                .any(|reason| reason.contains("target/toolchain"))
+                .any(|reason| reason.contains("target toolchain fingerprint"))
         );
     }
 
@@ -292,6 +343,7 @@ mod tests {
         let reference_hotspots = hotspots();
         let mut candidate_hotspots = hotspots();
         candidate_hotspots.event = Some("instructions:u".to_owned());
+        candidate_hotspots.sample_period = Some(250_000);
 
         let assessment = assess_recorded_identity(
             &reference_manifest,
@@ -312,6 +364,30 @@ mod tests {
                 .iter()
                 .any(|reason| reason.contains("event differs"))
         );
+        assert!(
+            assessment
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("sample period differs"))
+        );
+    }
+
+    #[test]
+    fn different_toolchain_fingerprint_is_incomparable() {
+        let reference = hotspots();
+        let mut candidate = hotspots();
+        candidate.target_toolchain_fingerprint = Some(
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+        );
+
+        let assessment = assess_recorded_identity(&manifest(), &manifest(), &reference, &candidate);
+        assert_eq!(assessment.status, HotspotComparabilityStatus::Incomparable);
+        assert!(
+            assessment
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("target toolchain fingerprint differs"))
+        );
     }
 
     #[test]
@@ -327,15 +403,7 @@ mod tests {
             &hotspots(),
             &hotspots(),
         );
-        assert_eq!(
-            assessment.status,
-            HotspotComparabilityStatus::InsufficientEvidence
-        );
-        assert!(
-            assessment
-                .reasons
-                .iter()
-                .all(|reason| !reason.contains("source"))
-        );
+        assert_eq!(assessment.status, HotspotComparabilityStatus::Comparable);
+        assert!(assessment.reasons.is_empty());
     }
 }
