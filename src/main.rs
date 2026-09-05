@@ -8,7 +8,8 @@ use clap::{Parser, Subcommand};
 use runtime_profiler::capture::install_cli_interruption_handlers;
 use runtime_profiler::contract::{Detection, DetectionReport, MetricsDocument};
 use runtime_profiler::{
-    RuntimeScoreDocument, build_agent_evidence_reference, capture_bundle, load_scenario,
+    HotspotComparabilityReport, HotspotComparabilityStatus, RuntimeScoreDocument,
+    build_agent_evidence_reference, capture_bundle, compare_hotspot_bundles, load_scenario,
     render_agent_guidance, score_bundles, summarize_bundle, validate_bundle,
 };
 
@@ -53,6 +54,15 @@ enum Commands {
     },
     /// Score a candidate bundle relative to a comparable reference bundle.
     Score {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long)]
+        candidate: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Report whether two hotspot bundles have enough compatible identity to compare.
+    CompareHotspots {
         #[arg(long)]
         reference: PathBuf,
         #[arg(long)]
@@ -112,6 +122,18 @@ fn main() -> Result<()> {
                 print_json(&score);
             } else {
                 print_score(&score);
+            }
+        }
+        Commands::CompareHotspots {
+            reference,
+            candidate,
+            json,
+        } => {
+            let report = compare_hotspot_bundles(&reference, &candidate)?;
+            if json {
+                print_json(&report);
+            } else {
+                print_hotspot_comparability(&report);
             }
         }
         Commands::RenderAgentGuidance { bundle, output } => {
@@ -235,5 +257,17 @@ fn print_score(score: &RuntimeScoreDocument) {
                 statistic.score
             );
         }
+    }
+}
+
+fn print_hotspot_comparability(report: &HotspotComparabilityReport) {
+    let status = match report.status {
+        HotspotComparabilityStatus::Comparable => "comparable",
+        HotspotComparabilityStatus::Incomparable => "incomparable",
+        HotspotComparabilityStatus::InsufficientEvidence => "insufficient-evidence",
+    };
+    println!("Hotspot comparability: {status}");
+    for reason in &report.reasons {
+        println!("- {reason}");
     }
 }
