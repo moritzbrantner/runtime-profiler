@@ -56,7 +56,11 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     let metrics = capture_metrics(&scenario)?;
     ensure_not_interrupted()?;
 
-    let (hotspots, raw_native_perf_report) = if scenario.scenario.collectors.contains(&Collector::NativePerf) {
+    let (hotspots, raw_native_perf_report) = if scenario
+        .scenario
+        .collectors
+        .contains(&Collector::NativePerf)
+    {
         let capture = capture_native_perf(&scenario)?;
         (capture.hotspots, Some(capture.raw_report))
     } else {
@@ -64,7 +68,8 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
             HotspotsDocument {
                 schema_version: HOTSPOTS_SCHEMA_V1.to_owned(),
                 status: "not-collected".to_owned(),
-                reason: "No source-level profiler adapter was requested by this v1 scenario".to_owned(),
+                reason: "No source-level profiler adapter was requested by this v1 scenario"
+                    .to_owned(),
                 collector: None,
                 tool_version: None,
                 event: None,
@@ -105,7 +110,12 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     ensure_not_interrupted()?;
 
     let mut files = Vec::with_capacity(
-        REQUIRED_ARTIFACTS.len() + if raw_native_perf_report.is_some() { 1 } else { 0 },
+        REQUIRED_ARTIFACTS.len()
+            + if raw_native_perf_report.is_some() {
+                1
+            } else {
+                0
+            },
     );
     for (path, media_type) in REQUIRED_ARTIFACTS {
         ensure_not_interrupted()?;
@@ -301,17 +311,25 @@ fn validate_hotspot_artifacts(
             );
         }
         if !raw_report_present {
-            diagnostics.push("native-perf scenario is missing its raw perf report artifact".to_owned());
+            diagnostics
+                .push("native-perf scenario is missing its raw perf report artifact".to_owned());
         }
-        if hotspots.tool_version.is_none() || hotspots.event.is_none() || hotspots.metric.is_none() {
-            diagnostics.push("native-perf hotspot evidence is missing collector identity metadata".to_owned());
+        if hotspots.tool_version.is_none() || hotspots.event.is_none() || hotspots.metric.is_none()
+        {
+            diagnostics.push(
+                "native-perf hotspot evidence is missing collector identity metadata".to_owned(),
+            );
         }
     } else {
         if raw_report_present {
-            diagnostics.push("process-only scenario unexpectedly contains native-perf raw evidence".to_owned());
+            diagnostics.push(
+                "process-only scenario unexpectedly contains native-perf raw evidence".to_owned(),
+            );
         }
         if hotspots.status == "collected" || hotspots.collector.is_some() {
-            diagnostics.push("process-only scenario unexpectedly claims collected hotspot evidence".to_owned());
+            diagnostics.push(
+                "process-only scenario unexpectedly claims collected hotspot evidence".to_owned(),
+            );
         }
     }
 }
