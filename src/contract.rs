@@ -40,6 +40,25 @@ pub enum Target {
         #[serde(default)]
         inherit_env: Vec<String>,
     },
+    Http {
+        url: String,
+        #[serde(default = "default_http_method")]
+        method: String,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
+        #[serde(default)]
+        body: Option<String>,
+        #[serde(default = "default_expected_http_statuses")]
+        expected_statuses: Vec<u16>,
+    },
+}
+
+fn default_http_method() -> String {
+    "GET".to_owned()
+}
+
+fn default_expected_http_statuses() -> Vec<u16> {
+    vec![200]
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -84,6 +103,7 @@ fn default_collectors() -> Vec<Collector> {
 pub enum Collector {
     Process,
     NativePerf,
+    Http,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -124,10 +144,26 @@ pub struct ScenarioEvidence {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TargetEvidence {
     pub target_type: String,
-    pub program: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub program: Option<String>,
+    #[serde(default)]
     pub argument_count: usize,
+    #[serde(default)]
     pub working_directory_set: bool,
+    #[serde(default)]
     pub inherited_environment_names: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_origin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_method: Option<String>,
+    #[serde(default)]
+    pub http_request_target_bytes: usize,
+    #[serde(default)]
+    pub http_request_body_bytes: usize,
+    #[serde(default)]
+    pub http_header_names: Vec<String>,
+    #[serde(default)]
+    pub http_expected_statuses: Vec<u16>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -165,6 +201,12 @@ pub struct MeasurementSample {
     pub exit_code: Option<i32>,
     pub timed_out: bool,
     pub succeeded: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_failure_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
