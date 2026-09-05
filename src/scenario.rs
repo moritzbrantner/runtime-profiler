@@ -55,7 +55,8 @@ impl LoadedScenario {
         }
     }
 
-    pub fn evidence(&self) -> Result<ScenarioEvidence> {
+    #[must_use]
+    pub fn evidence(&self) -> ScenarioEvidence {
         let target = match &self.scenario.target {
             Target::Command {
                 program,
@@ -75,17 +76,17 @@ impl LoadedScenario {
                 http_header_names: Vec::new(),
                 http_expected_statuses: Vec::new(),
             },
-            Target::Http { .. } => http::target_evidence(&self.scenario.target)?,
+            Target::Http { .. } => http::target_evidence(&self.scenario.target),
         };
 
-        Ok(ScenarioEvidence {
+        ScenarioEvidence {
             schema_version: SCENARIO_EVIDENCE_SCHEMA_V1.to_owned(),
             id: self.scenario.id.clone(),
             digest: self.digest.clone(),
             target,
             run: self.scenario.run.clone(),
             collectors: self.scenario.collectors.clone(),
-        })
+        }
     }
 }
 
@@ -329,8 +330,7 @@ mod tests {
             digest: sha256_bytes(&normalized),
         };
 
-        let evidence = serde_json::to_string(&loaded.evidence().expect("scenario evidence"))
-            .expect("serialize evidence");
+        let evidence = serde_json::to_string(&loaded.evidence()).expect("serialize evidence");
         assert!(!evidence.contains("secret-value"));
         assert!(evidence.contains("argument_count"));
     }
@@ -344,8 +344,7 @@ mod tests {
             source_path: PathBuf::from("scenario.json"),
             digest: sha256_bytes(&normalized),
         };
-        let evidence = serde_json::to_string(&loaded.evidence().expect("HTTP scenario evidence"))
-            .expect("serialize evidence");
+        let evidence = serde_json::to_string(&loaded.evidence()).expect("serialize evidence");
 
         assert!(!evidence.contains("/health"));
         assert!(evidence.contains("http_origin"));
