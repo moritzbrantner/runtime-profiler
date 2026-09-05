@@ -34,7 +34,7 @@
     "collectors": {
       "type": "array",
       "minItems": 1,
-      "items": { "enum": ["process"] }
+      "items": { "enum": ["process", "native-perf"] }
     }
   }
 }
