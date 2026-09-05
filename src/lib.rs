@@ -5,6 +5,7 @@ pub mod capture;
 pub mod contract;
 pub mod digest;
 pub mod evidence;
+pub mod native_perf;
 pub mod scenario;
 pub mod score;
 
