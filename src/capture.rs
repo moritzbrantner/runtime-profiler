@@ -72,6 +72,13 @@ pub(crate) fn ensure_not_interrupted() -> Result<()> {
 }
 
 pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
+    match &loaded.scenario.target {
+        Target::Command { .. } => capture_command_metrics(loaded),
+        Target::Http { .. } => crate::http::capture_metrics(loaded),
+    }
+}
+
+fn capture_command_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
     for warmup in 0..loaded.scenario.run.warmup_iterations {
         let result = execute_once(loaded, warmup + 1)
             .with_context(|| format!("warm-up iteration {} failed to execute", warmup + 1))?;
@@ -145,7 +152,9 @@ fn memory_metric_summaries(samples: &[MeasurementSample]) -> Vec<MetricSummary> 
 }
 
 fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSample> {
-    let Target::Command { program, args, .. } = &loaded.scenario.target;
+    let Target::Command { program, args, .. } = &loaded.scenario.target else {
+        bail!("command execution requires a command target");
+    };
 
     let mut command = Command::new(program);
     command.args(args);
@@ -210,7 +219,10 @@ fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
         working_directory,
         inherit_env,
         ..
-    } = &loaded.scenario.target;
+    } = &loaded.scenario.target
+    else {
+        return;
+    };
 
     command.stdin(Stdio::null());
     command.stdout(Stdio::null());
@@ -280,6 +292,9 @@ fn sample_from_status(
         exit_code: status.code(),
         timed_out,
         succeeded: status.success() && !timed_out,
+        http_status: None,
+        response_bytes: None,
+        http_failure_kind: None,
     }
 }
 
@@ -352,6 +367,9 @@ mod tests {
             exit_code: Some(0),
             timed_out: false,
             succeeded: true,
+            http_status: None,
+            response_bytes: None,
+            http_failure_kind: None,
         }];
         let metrics = memory_metric_summaries(&samples);
 
