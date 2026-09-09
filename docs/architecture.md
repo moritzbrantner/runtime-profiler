@@ -3,23 +3,33 @@
 ## Responsibility
 
 runtime-profiler is an evidence producer. It executes an explicitly declared
-workload and produces bounded, integrity-checked runtime facts. It does not
-decide whether one implementation is preferable to another.
+workload and produces bounded, integrity-checked runtime facts. It may also
+produce descriptive score and comparability evidence for strictly compatible
+bundles, but it does not decide whether one implementation is preferable to
+another or should ship.
 
 ```mermaid
 flowchart TD
     A["Scenario and source revision"] --> B["runtime-profiler"]
     B --> C["Immutable profiler bundle"]
-    C --> D["agent.evidence/v1 reference"]
-    D --> E["agent-loop-orchestrator"]
+    C --> H["Direct CLI / CI / coding-agent consumer"]
+    C -. "optional cross-component reference" .-> D["agent.evidence/v1 reference"]
+    D --> E["orchestrator or evaluator"]
     C -. "producer-specific adapter" .-> F["Moonlight or another evaluator"]
     F --> G["agent.evaluation-result/v1"]
-    G --> E
+    G -. "when orchestrated" .-> E
 ```
 
-The solid path is the shared landscape boundary. The dotted path is an evaluator
-adapter: Moonlight may understand the profiler bundle format, but that private
-producer/evaluator integration must not become the orchestration contract.
+The profiler bundle is the authoritative artifact and does not require an
+orchestrator. The neutral `agent.evidence/v1` reference is used when evidence
+crosses an independently owned component boundary. The producer-specific
+evaluator adapter is separate: Moonlight may understand the profiler bundle
+format, but that private producer/evaluator integration must not become the
+orchestration contract.
+
+Descriptive baseline/candidate normalization and hotspot comparability remain
+profiler evidence. Project-specific thresholds, regression policy, pass/fail
+language, and release verdicts belong to Moonlight or another evaluator.
 
 ## Layers
 
@@ -30,10 +40,12 @@ producer/evaluator integration must not become the orchestration contract.
    hotspot contracts.
 4. **Bundle creation** writes redacted artifacts and their cryptographic
    digests. `manifest.json` is written last.
-5. **Landscape adapter** exposes the complete immutable bundle as a neutral
-   `agent.evidence/v1` reference without copying measurements into the shared
-   contract.
-6. **Presentation** renders bounded JSON or Markdown without changing evidence.
+5. **Landscape adapter** optionally exposes the complete immutable bundle as a
+   neutral `agent.evidence/v1` reference without copying measurements into the
+   shared contract.
+6. **Presentation and descriptive normalization** render bounded JSON or
+   Markdown and compare strictly compatible evidence without adding project
+   policy or release verdicts.
 
 The CLI is a thin adapter. `coding-tooling` may invoke the CLI through a declared
 semantic capability; first-class discovery should still call the same library
@@ -82,6 +94,6 @@ comparison policy into runtime-profiler.
 - Always-on production monitoring or alerting.
 - A general observability storage backend.
 - A human dashboard.
-- Automated baseline/candidate verdicts.
+- Automated baseline/candidate release verdicts.
 - Owning orchestrator run state or shared ecosystem contracts.
 - LLM-generated performance measurements.
