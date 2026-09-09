@@ -400,6 +400,72 @@
         }
       ],
       "reason": null
+    },
+    {
+      "commit": "a8624eb1fd0c07000fdb2860fe36539c7b68dcbd",
+      "parent_commit": "8280c95feb2a1075efa0480a9622e40c723e0b3a",
+      "timestamp": "2026-09-09T19:51:56+02:00",
+      "status": "scored",
+      "score": 100,
+      "rating": "good",
+      "average_change_percent": 0.002,
+      "scenario_id": "runtime-profiler-history-score",
+      "environment_fingerprint_schema_version": "runtime-profiler/environment-fingerprint/v1",
+      "metrics": [
+        {
+          "id": "process.max_observed_rss",
+          "score": 100,
+          "average_change_percent": 0,
+          "statistics": [
+            {
+              "statistic": "median",
+              "score": 100,
+              "change_percent": 0
+            },
+            {
+              "statistic": "p95",
+              "score": 100,
+              "change_percent": 0
+            }
+          ]
+        },
+        {
+          "id": "process.success_rate",
+          "score": 100,
+          "average_change_percent": 0,
+          "statistics": [
+            {
+              "statistic": "mean",
+              "score": 100,
+              "change_percent": 0
+            }
+          ]
+        },
+        {
+          "id": "process.wall_time",
+          "score": 100,
+          "average_change_percent": 0.005,
+          "statistics": [
+            {
+              "statistic": "median",
+              "score": 100,
+              "change_percent": -0.012
+            },
+            {
+              "statistic": "p95",
+              "score": 100,
+              "change_percent": 0.021
+            }
+          ]
+        }
+      ],
+      "excluded_metrics": [
+        {
+          "id": "process.max_rss",
+          "reason": "compatibility alias of process.max_observed_rss; excluded to avoid double-weighting"
+        }
+      ],
+      "reason": null
     }
   ]
 }
