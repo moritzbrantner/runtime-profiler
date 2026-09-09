@@ -9,13 +9,13 @@ reference-retention score without owning release policy.
 The project deliberately separates collection and descriptive normalization from policy evaluation:
 
 - **runtime-profiler** captures and validates runtime facts and can summarize strictly comparable baseline/candidate evidence into a descriptive score.
-- **agent-contracts** defines the neutral cross-repository evidence reference used by the wider agent landscape.
+- **agent-contracts** defines the neutral cross-repository evidence reference when profiler evidence crosses into another independently owned component.
 - **Moonlight** owns project-specific thresholds, regression policy, and pass/fail evaluation; a runtime-profiler score is evidence, not a release verdict.
 - **coding-tooling** can invoke profiler scenarios through repository-declared deterministic capabilities; first-class profiler discovery belongs there rather than in this repository.
 - **coding-agent-conventions** defines how agents act on runtime evidence and performance policy.
-- **agent-loop-orchestrator** schedules capture/change/recapture work and stores evidence/evaluation references in durable run state.
+- **agent-loop-orchestrator**, when orchestrated mode is selected, may schedule capture/change/recapture work and store evidence/evaluation references in durable run state. It is not required for direct profiler use.
 
-The intended boundary is therefore:
+The core boundary is therefore:
 
 ```text
 scenario + source revision
@@ -24,22 +24,26 @@ scenario + source revision
 runtime-profiler capture
         |
         +--> immutable profiler bundle
-        |
-        +--> agent.evidence/v1 reference
+                 |
+                 +--> direct CLI / CI / coding-agent consumer
+                 |
+                 +--> optional agent.evidence/v1 reference
+                              |
+                              +--> evaluator or orchestrator
 
 compatible reference + candidate bundles
         |
-        +--> runtime-profiler score (descriptive evidence)
+        +--> runtime-profiler score / comparability (descriptive evidence)
         |
         v
 Moonlight / evaluator (project policy and verdict)
 ```
 
 The profiler-specific bundle remains the source artifact. `agent.evidence/v1`
-is only the neutral reference envelope; it does not duplicate measurements or
-pull evaluator policy into this repository. Direct Moonlight bundle support is a
-separate adapter step after both components expose their neutral landscape
-boundaries.
+is only the neutral reference envelope when evidence crosses an independently
+owned component boundary; it does not duplicate measurements or pull evaluator
+policy into this repository. Direct Moonlight bundle support is a separate
+adapter step after both components expose their neutral landscape boundaries.
 
 ## Current release
 
@@ -89,6 +93,9 @@ cargo run -- evidence-reference \
   --bundle .runtime-profiler/example \
   --uri .agent-loop/evidence/runtime-profiler/example
 ```
+
+`evidence-reference` is optional and is needed only when a validated bundle must
+cross an independently owned component boundary.
 
 After capturing the same scenario on a comparable reference and candidate source revision:
 
