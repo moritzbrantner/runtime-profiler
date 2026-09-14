@@ -245,7 +245,26 @@ pub struct Hotspot {
     pub samples: u64,
     #[serde(default)]
     pub confidence: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub call_paths: Vec<HotspotCallPath>,
+    #[serde(default)]
+    pub call_paths_truncated: bool,
     pub evidence_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HotspotCallPath {
+    #[serde(default)]
+    pub id: String,
+    pub frames: Vec<HotspotCallPathFrame>,
+    #[serde(default)]
+    pub samples: u64,
+    pub evidence_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HotspotCallPathFrame {
+    pub symbol: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
