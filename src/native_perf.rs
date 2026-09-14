@@ -182,7 +182,7 @@ pub fn capture_native_perf(loaded: &LoadedScenario) -> Result<NativePerfCapture>
         .args(["report", "--stdio", "--quiet", "--no-children"])
         .arg("--input")
         .arg(&perf_data)
-        .args(["--percent-limit=0", "--sort=symbol", "--fields=none"])
+        .args(["--percent-limit=0", "--sort=symbol", "--max-stack=32"])
         .arg(format!("--call-graph={CALL_GRAPH_REPORT_MODE}"))
         .stdin(Stdio::null())
         .output()
@@ -523,7 +523,7 @@ fn parse_folded_call_paths(report: &str) -> Result<BTreeMap<String, ParsedCallPa
             "perf folded call-path line exceeds the safety limit"
         );
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
+        if trimmed.is_empty() || trimmed.starts_with('#') || !trimmed.contains(';') {
             continue;
         }
 
@@ -899,7 +899,7 @@ mod tests {
         )
         .expect("parse flat report");
         let call_paths = parse_folded_call_paths(
-            "2 main;dispatch;work\nmain;dispatch;work 3\n1 main;fallback;work\n",
+            "Overhead  Samples  Symbol\n2 main;dispatch;work\nmain;dispatch;work 3\n1 main;fallback;work\n",
         )
         .expect("parse folded call paths");
         attach_call_paths(&mut hotspots, &call_paths);
@@ -917,6 +917,15 @@ mod tests {
             vec!["main", "dispatch", "work"]
         );
         assert_eq!(work.call_paths[1].samples, 1);
+    }
+
+    #[test]
+    fn folded_call_paths_ignore_non_path_rows() {
+        let call_paths = parse_folded_call_paths(
+            "Overhead  Samples  Symbol\n  50.00%  5  work\n# comment\n",
+        )
+        .expect("non-path rows are ignored");
+        assert!(call_paths.is_empty());
     }
 
     #[test]
