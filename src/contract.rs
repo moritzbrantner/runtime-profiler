@@ -40,6 +40,13 @@ pub enum Target {
         #[serde(default)]
         inherit_env: Vec<String>,
     },
+    BrowserJourney {
+        module: PathBuf,
+        #[serde(default)]
+        working_directory: Option<PathBuf>,
+        #[serde(default)]
+        inherit_env: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -84,6 +91,7 @@ fn default_collectors() -> Vec<Collector> {
 pub enum Collector {
     Process,
     NativePerf,
+    BrowserChromium,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -122,12 +130,19 @@ pub struct ScenarioEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TargetEvidence {
-    pub target_type: String,
-    pub program: String,
-    pub argument_count: usize,
-    pub working_directory_set: bool,
-    pub inherited_environment_names: Vec<String>,
+#[serde(tag = "target_type", rename_all = "kebab-case")]
+pub enum TargetEvidence {
+    Command {
+        program: String,
+        argument_count: usize,
+        working_directory_set: bool,
+        inherited_environment_names: Vec<String>,
+    },
+    BrowserJourney {
+        module: String,
+        working_directory_set: bool,
+        inherited_environment_names: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
