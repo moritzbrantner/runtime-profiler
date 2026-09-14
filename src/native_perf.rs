@@ -10,8 +10,8 @@ use serde::Serialize;
 
 use crate::capture::execute_prepared_command;
 use crate::contract::{
-    CollectorPlan, Detection, HOTSPOTS_SCHEMA_V1, Hotspot, HotspotCallPath,
-    HotspotCallPathFrame, HotspotsDocument, Target,
+    CollectorPlan, Detection, HOTSPOTS_SCHEMA_V1, Hotspot, HotspotCallPath, HotspotCallPathFrame,
+    HotspotsDocument, Target,
 };
 use crate::digest::sha256_bytes;
 use crate::scenario::LoadedScenario;
@@ -528,7 +528,10 @@ fn parse_folded_call_paths(report: &str) -> Result<BTreeMap<String, ParsedCallPa
         }
 
         let (samples, stack) = parse_folded_call_path_line(trimmed)?;
-        ensure!(samples > 0, "perf folded call-path sample count must be positive");
+        ensure!(
+            samples > 0,
+            "perf folded call-path sample count must be positive"
+        );
         let frames = stack
             .split(';')
             .map(|frame| bounded_field(frame, "call-path symbol"))
@@ -559,11 +562,13 @@ fn parse_folded_call_paths(report: &str) -> Result<BTreeMap<String, ParsedCallPa
     let mut result = BTreeMap::new();
     for (leaf, paths) in aggregated {
         let mut paths = paths.into_iter().collect::<Vec<_>>();
-        paths.sort_by(|(left_frames, left_samples), (right_frames, right_samples)| {
-            right_samples
-                .cmp(left_samples)
-                .then_with(|| left_frames.cmp(right_frames))
-        });
+        paths.sort_by(
+            |(left_frames, left_samples), (right_frames, right_samples)| {
+                right_samples
+                    .cmp(left_samples)
+                    .then_with(|| left_frames.cmp(right_frames))
+            },
+        );
         let truncated = paths.len() > MAX_CALL_PATHS_PER_HOTSPOT;
         paths.truncate(MAX_CALL_PATHS_PER_HOTSPOT);
         let paths = paths
@@ -921,10 +926,9 @@ mod tests {
 
     #[test]
     fn folded_call_paths_ignore_non_path_rows() {
-        let call_paths = parse_folded_call_paths(
-            "Overhead  Samples  Symbol\n  50.00%  5  work\n# comment\n",
-        )
-        .expect("non-path rows are ignored");
+        let call_paths =
+            parse_folded_call_paths("Overhead  Samples  Symbol\n  50.00%  5  work\n# comment\n")
+                .expect("non-path rows are ignored");
         assert!(call_paths.is_empty());
     }
 
