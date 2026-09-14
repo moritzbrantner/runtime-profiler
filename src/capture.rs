@@ -29,10 +29,6 @@ static INTERRUPTED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 #[cfg(unix)]
 static CLI_HANDLERS_INSTALLED: AtomicBool = AtomicBool::new(false);
 
-/// Installs process-lifetime interruption handling for the short-lived CLI.
-///
-/// Library callers do not install signal handlers; an embedding application
-/// retains ownership of its process-global signal policy.
 #[cfg(unix)]
 pub fn install_cli_interruption_handlers() -> Result<()> {
     if CLI_HANDLERS_INSTALLED.swap(true, Ordering::SeqCst) {
@@ -72,6 +68,10 @@ pub(crate) fn ensure_not_interrupted() -> Result<()> {
 }
 
 pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
+    if !matches!(loaded.scenario.target, Target::Command { .. }) {
+        bail!("process metrics require a command target");
+    }
+
     for warmup in 0..loaded.scenario.run.warmup_iterations {
         let result = execute_once(loaded, warmup + 1)
             .with_context(|| format!("warm-up iteration {} failed to execute", warmup + 1))?;
@@ -145,7 +145,9 @@ fn memory_metric_summaries(samples: &[MeasurementSample]) -> Vec<MetricSummary> 
 }
 
 fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSample> {
-    let Target::Command { program, args, .. } = &loaded.scenario.target;
+    let Target::Command { program, args, .. } = &loaded.scenario.target else {
+        bail!("process measurement requires a command target");
+    };
 
     let mut command = Command::new(program);
     command.args(args);
@@ -206,11 +208,18 @@ pub(crate) fn execute_prepared_command(
 }
 
 fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
-    let Target::Command {
-        working_directory,
-        inherit_env,
-        ..
-    } = &loaded.scenario.target;
+    let (working_directory, inherit_env) = match &loaded.scenario.target {
+        Target::Command {
+            working_directory,
+            inherit_env,
+            ..
+        }
+        | Target::BrowserJourney {
+            working_directory,
+            inherit_env,
+            ..
+        } => (working_directory, inherit_env),
+    };
 
     command.stdin(Stdio::null());
     command.stdout(Stdio::null());
