@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runtime-profiler.local/schemas/chromium-trace-summary.schema.json",
+  "title": "runtime-profiler Chromium trace summary v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "trace_event_count",
+    "main_thread",
+    "top_level_task_count",
+    "top_level_duration_us",
+    "long_task_count",
+    "long_task_total_duration_us",
+    "longest_task_us",
+    "long_tasks_truncated",
+    "long_tasks",
+    "hot_path_count",
+    "hot_paths_truncated",
+    "hot_path_depth_truncated",
+    "hot_paths",
+    "runtime_attribution",
+    "boundary_marker_count",
+    "boundary_markers_truncated",
+    "boundary_markers",
+    "limitations"
+  ],
+  "properties": {
+    "schema_version": { "const": "runtime-profiler/chromium-trace-summary/v1" },
+    "trace_event_count": { "type": "integer", "minimum": 0 },
+    "main_thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["process_id", "thread_id", "name"],
+      "properties": {
+        "process_id": { "type": "integer" },
+        "thread_id": { "type": "integer" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      }
+    },
+    "top_level_task_count": { "type": "integer", "minimum": 0 },
+    "top_level_duration_us": { "type": "integer", "minimum": 0 },
+    "long_task_count": { "type": "integer", "minimum": 0 },
+    "long_task_total_duration_us": { "type": "integer", "minimum": 0 },
+    "longest_task_us": { "type": ["integer", "null"], "minimum": 0 },
+    "long_tasks_truncated": { "type": "boolean" },
+    "long_tasks": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "category", "start_us", "duration_us", "runtime_kind", "evidence_ref"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "category": { "type": "string", "maxLength": 1024 },
+          "start_us": { "type": "integer", "minimum": 0 },
+          "duration_us": { "type": "integer", "minimum": 0 },
+          "runtime_kind": { "enum": ["javascript", "wasm", "other"] },
+          "evidence_ref": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "hot_path_count": { "type": "integer", "minimum": 0 },
+    "hot_paths_truncated": { "type": "boolean" },
+    "hot_path_depth_truncated": { "type": "boolean" },
+    "hot_paths": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "frames", "leaf_runtime_kind", "total_duration_us", "max_duration_us", "occurrences", "evidence_ref"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "frames": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "category"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1, "maxLength": 1024 },
+                "category": { "type": "string", "maxLength": 1024 }
+              }
+            }
+          },
+          "leaf_runtime_kind": { "enum": ["javascript", "wasm", "other"] },
+          "total_duration_us": { "type": "integer", "minimum": 0 },
+          "max_duration_us": { "type": "integer", "minimum": 0 },
+          "occurrences": { "type": "integer", "minimum": 0 },
+          "evidence_ref": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "runtime_attribution": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runtime_kind", "inclusive_duration_us", "event_count"],
+        "properties": {
+          "runtime_kind": { "enum": ["javascript", "wasm", "other"] },
+          "inclusive_duration_us": { "type": "integer", "minimum": 0 },
+          "event_count": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "boundary_marker_count": { "type": "integer", "minimum": 0 },
+    "boundary_markers_truncated": { "type": "boolean" },
+    "boundary_markers": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "direction", "label", "total_duration_us", "max_duration_us", "occurrences", "evidence_ref"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "direction": { "enum": ["js-to-wasm", "wasm-to-js"] },
+          "label": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "total_duration_us": { "type": "integer", "minimum": 0 },
+          "max_duration_us": { "type": "integer", "minimum": 0 },
+          "occurrences": { "type": "integer", "minimum": 0 },
+          "evidence_ref": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
