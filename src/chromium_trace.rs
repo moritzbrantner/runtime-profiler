@@ -146,7 +146,8 @@ pub fn analyze_chromium_trace_bytes(bytes: &[u8]) -> Result<ChromiumTraceSummary
         "Chromium trace exceeds the {} byte safety limit",
         MAX_TRACE_BYTES
     );
-    let document: Value = serde_json::from_slice(bytes).context("Chromium trace is not valid JSON")?;
+    let document: Value =
+        serde_json::from_slice(bytes).context("Chromium trace is not valid JSON")?;
     let events = extract_trace_events(document)?;
     ensure!(
         events.len() <= MAX_TRACE_EVENTS,
@@ -321,7 +322,9 @@ fn summarize_complete_events(
         }
 
         let runtime = runtime_kind(&event.name, &event.category);
-        let entry = runtime_aggregates.entry(runtime.to_owned()).or_insert((0, 0));
+        let entry = runtime_aggregates
+            .entry(runtime.to_owned())
+            .or_insert((0, 0));
         entry.0 = entry.0.saturating_add(event.duration_us);
         entry.1 = entry.1.saturating_add(1);
 
@@ -330,11 +333,13 @@ fn summarize_complete_events(
             if boundary_aggregates.len() < MAX_UNIQUE_BOUNDARY_MARKERS
                 || boundary_aggregates.contains_key(&key)
             {
-                let entry = boundary_aggregates.entry(key).or_insert_with(|| BoundaryAggregate {
-                    direction: direction.to_owned(),
-                    label: label.to_owned(),
-                    aggregate: Aggregate::default(),
-                });
+                let entry = boundary_aggregates
+                    .entry(key)
+                    .or_insert_with(|| BoundaryAggregate {
+                        direction: direction.to_owned(),
+                        label: label.to_owned(),
+                        aggregate: Aggregate::default(),
+                    });
                 update_aggregate(&mut entry.aggregate, event.duration_us);
             } else {
                 boundary_markers_truncated = true;
@@ -559,7 +564,10 @@ fn runtime_kind(name: &str, category: &str) -> &'static str {
 fn parse_boundary_marker(name: &str) -> Option<(&'static str, &str)> {
     const JS_TO_WASM: &str = "runtime-profiler:js-to-wasm:";
     const WASM_TO_JS: &str = "runtime-profiler:wasm-to-js:";
-    if let Some(label) = name.strip_prefix(JS_TO_WASM).filter(|value| !value.is_empty()) {
+    if let Some(label) = name
+        .strip_prefix(JS_TO_WASM)
+        .filter(|value| !value.is_empty())
+    {
         return Some(("js-to-wasm", label));
     }
     name.strip_prefix(WASM_TO_JS)
@@ -662,10 +670,11 @@ mod tests {
         assert_eq!(summary.longest_task_us, Some(100_000));
         assert_eq!(summary.long_tasks[0].name, "RunTask");
         assert!(summary.hot_paths.iter().any(|path| {
-            path.frames
-                .iter()
-                .map(|frame| frame.name.as_str())
-                .eq(["RunTask", "FunctionCall", "WebAssembly.execute"])
+            path.frames.iter().map(|frame| frame.name.as_str()).eq([
+                "RunTask",
+                "FunctionCall",
+                "WebAssembly.execute",
+            ])
         }));
         assert!(summary.runtime_attribution.iter().any(|entry| {
             entry.runtime_kind == "wasm" && entry.inclusive_duration_us == 40_000
@@ -679,7 +688,12 @@ mod tests {
     #[test]
     fn ignores_non_renderer_threads() {
         let summary = analyze_chromium_trace_bytes(&representative_trace()).expect("trace summary");
-        assert!(!summary.long_tasks.iter().any(|task| task.name == "WorkerTask"));
+        assert!(
+            !summary
+                .long_tasks
+                .iter()
+                .any(|task| task.name == "WorkerTask")
+        );
     }
 
     #[test]
