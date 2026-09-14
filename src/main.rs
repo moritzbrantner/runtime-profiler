@@ -10,8 +10,8 @@ use runtime_profiler::contract::{Detection, DetectionReport, MetricsDocument};
 use runtime_profiler::{
     ChromiumTraceSummary, HotspotComparabilityReport, HotspotComparabilityStatus,
     RuntimeScoreDocument, analyze_chromium_trace, build_agent_evidence_reference, capture_bundle,
-    compare_hotspot_bundles, load_scenario, render_agent_guidance, score_bundles,
-    summarize_bundle, validate_bundle,
+    compare_hotspot_bundles, load_scenario, render_agent_guidance, score_bundles, summarize_bundle,
+    validate_bundle,
 };
 
 #[derive(Debug, Parser)]
@@ -318,10 +318,7 @@ fn print_chromium_trace_summary(summary: &ChromiumTraceSummary) {
     for boundary in summary.boundary_markers.iter().take(5) {
         println!(
             "Boundary {} `{}`: {} us across {} occurrences",
-            boundary.direction,
-            boundary.label,
-            boundary.total_duration_us,
-            boundary.occurrences
+            boundary.direction, boundary.label, boundary.total_duration_us, boundary.occurrences
         );
     }
 }
