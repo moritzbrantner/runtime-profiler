@@ -32,7 +32,10 @@ function parseArgs(argv) {
 function loadPlaywright() {
   const requireFromConsumer = createRequire(path.join(process.cwd(), "package.json"));
   try {
-    return requireFromConsumer("playwright");
+    return {
+      api: requireFromConsumer("playwright"),
+      version: requireFromConsumer("playwright/package.json").version,
+    };
   } catch (error) {
     throw new Error(
       "browser-chromium requires the consumer working directory to provide the `playwright` package",
@@ -46,7 +49,9 @@ async function readTraceStream(session, stream) {
   for (;;) {
     const result = await session.send("IO.read", { handle: stream });
     if (result.data) {
-      chunks.push(result.base64Encoded ? Buffer.from(result.data, "base64") : Buffer.from(result.data));
+      chunks.push(
+        result.base64Encoded ? Buffer.from(result.data, "base64") : Buffer.from(result.data),
+      );
     }
     if (result.eof) break;
   }
@@ -64,7 +69,8 @@ async function stopTrace(session) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const { chromium } = loadPlaywright();
+  const playwright = loadPlaywright();
+  const { chromium } = playwright.api;
   const journeyUrl = pathToFileURL(path.resolve(args.get("--journey"))).href;
   const journey = await import(journeyUrl);
   if (typeof journey.run !== "function") {
@@ -95,7 +101,8 @@ async function main() {
         {
           schema_version: "runtime-profiler/browser-runtime/v1",
           adapter_version: ADAPTER_VERSION,
-          playwright_version: loadPlaywright()._impl?._apiName ?? "available",
+          node_version: process.version,
+          playwright_version: playwright.version,
           browser_name: "chromium",
           browser_version: browser.version(),
           viewport: { width: 1280, height: 720 },
