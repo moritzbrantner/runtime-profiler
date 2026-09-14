@@ -13,12 +13,17 @@
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9._-]+$"
     },
-    "target": { "$ref": "#/$defs/commandTarget" },
+    "target": {
+      "oneOf": [
+        { "$ref": "#/$defs/commandTarget" },
+        { "$ref": "#/$defs/browserJourneyTarget" }
+      ]
+    },
     "run": { "$ref": "#/$defs/run" },
     "collectors": {
       "type": "array",
       "minItems": 1,
-      "items": { "enum": ["process", "native-perf"] },
+      "items": { "enum": ["process", "native-perf", "browser-chromium"] },
       "default": ["process"]
     }
   },
@@ -35,6 +40,42 @@
           "collectors": { "contains": { "const": "process" } }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": { "type": { "const": "browser-journey" } },
+            "required": ["type"]
+          }
+        }
+      },
+      "then": {
+        "required": ["collectors", "run"],
+        "properties": {
+          "collectors": { "const": ["browser-chromium"] },
+          "run": {
+            "allOf": [
+              { "$ref": "#/$defs/run" },
+              {
+                "required": ["warmup_iterations", "measurement_iterations"],
+                "properties": {
+                  "warmup_iterations": { "const": 0 },
+                  "measurement_iterations": { "const": 1 }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "collectors": {
+            "type": "array",
+            "items": { "enum": ["process", "native-perf"] }
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -49,6 +90,25 @@
           "type": "array",
           "items": { "type": "string" },
           "default": []
+        },
+        "working_directory": { "type": ["string", "null"] },
+        "inherit_env": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": []
+        }
+      }
+    },
+    "browserJourneyTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "module"],
+      "properties": {
+        "type": { "const": "browser-journey" },
+        "module": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
         },
         "working_directory": { "type": ["string", "null"] },
         "inherit_env": {
