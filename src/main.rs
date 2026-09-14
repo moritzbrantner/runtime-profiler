@@ -8,9 +8,10 @@ use clap::{Parser, Subcommand};
 use runtime_profiler::capture::install_cli_interruption_handlers;
 use runtime_profiler::contract::{Detection, DetectionReport, MetricsDocument};
 use runtime_profiler::{
-    HotspotComparabilityReport, HotspotComparabilityStatus, RuntimeScoreDocument,
-    build_agent_evidence_reference, capture_bundle, compare_hotspot_bundles, load_scenario,
-    render_agent_guidance, score_bundles, summarize_bundle, validate_bundle,
+    ChromiumTraceSummary, HotspotComparabilityReport, HotspotComparabilityStatus,
+    RuntimeScoreDocument, analyze_chromium_trace, build_agent_evidence_reference, capture_bundle,
+    compare_hotspot_bundles, load_scenario, render_agent_guidance, score_bundles,
+    summarize_bundle, validate_bundle,
 };
 
 #[derive(Debug, Parser)]
@@ -67,6 +68,13 @@ enum Commands {
         reference: PathBuf,
         #[arg(long)]
         candidate: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Normalize a Chromium trace into bounded renderer-main-thread runtime evidence.
+    AnalyzeChromiumTrace {
+        #[arg(long)]
+        trace: PathBuf,
         #[arg(long)]
         json: bool,
     },
@@ -134,6 +142,14 @@ fn main() -> Result<()> {
                 print_json(&report);
             } else {
                 print_hotspot_comparability(&report);
+            }
+        }
+        Commands::AnalyzeChromiumTrace { trace, json } => {
+            let summary = analyze_chromium_trace(&trace)?;
+            if json {
+                print_json(&summary);
+            } else {
+                print_chromium_trace_summary(&summary);
             }
         }
         Commands::RenderAgentGuidance { bundle, output } => {
@@ -269,5 +285,43 @@ fn print_hotspot_comparability(report: &HotspotComparabilityReport) {
     println!("Hotspot comparability: {status}");
     for reason in &report.reasons {
         println!("- {reason}");
+    }
+}
+
+fn print_chromium_trace_summary(summary: &ChromiumTraceSummary) {
+    println!(
+        "Renderer main thread: {} (pid={}, tid={})",
+        summary.main_thread.name, summary.main_thread.process_id, summary.main_thread.thread_id
+    );
+    println!(
+        "Top-level tasks: {} ({} us observed), long tasks >= 50 ms: {} ({} us total)",
+        summary.top_level_task_count,
+        summary.top_level_duration_us,
+        summary.long_task_count,
+        summary.long_task_total_duration_us
+    );
+    if let Some(longest) = summary.longest_task_us {
+        println!("Longest task: {longest} us");
+    }
+    for path in summary.hot_paths.iter().take(5) {
+        let frames = path
+            .frames
+            .iter()
+            .map(|frame| frame.name.as_str())
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        println!(
+            "Hot path: {} us across {} occurrences [{}]",
+            path.total_duration_us, path.occurrences, frames
+        );
+    }
+    for boundary in summary.boundary_markers.iter().take(5) {
+        println!(
+            "Boundary {} `{}`: {} us across {} occurrences",
+            boundary.direction,
+            boundary.label,
+            boundary.total_duration_us,
+            boundary.occurrences
+        );
     }
 }
