@@ -164,7 +164,11 @@ pub fn analyze_chromium_trace_bytes(bytes: &[u8]) -> Result<ChromiumTraceSummary
             .then_with(|| left.category.cmp(&right.category))
     });
 
-    summarize_complete_events(events.len(), main_thread, &complete_events)
+    Ok(summarize_complete_events(
+        events.len(),
+        main_thread,
+        &complete_events,
+    ))
 }
 
 fn extract_trace_events(document: Value) -> Result<Vec<Value>> {
@@ -197,13 +201,11 @@ fn find_renderer_main_thread(events: &[Value]) -> Result<ChromiumMainThread> {
         let Some(rank) = renderer_main_thread_rank(name) else {
             continue;
         };
-        let process_id = integer_field(event, "pid")?;
-        let thread_id = integer_field(event, "tid")?;
         candidates.push((
             rank,
-            process_id,
-            thread_id,
-            bounded_text(name, "renderer main thread name")?,
+            integer_field(event, "pid")?,
+            integer_field(event, "tid")?,
+            bounded_nonempty_text(name, "renderer main thread name")?,
         ));
     }
 
@@ -218,7 +220,6 @@ fn find_renderer_main_thread(events: &[Value]) -> Result<ChromiumMainThread> {
             "Chromium trace does not contain explicit renderer-main-thread metadata (`CrRendererMain`/`RendererMain`)"
         );
     };
-
     Ok(ChromiumMainThread {
         process_id,
         thread_id,
@@ -260,10 +261,12 @@ fn parse_main_thread_complete_events(
         let Some(duration_us) = nonnegative_us_field_optional(event, "dur")? else {
             continue;
         };
-        let category = event.get("cat").and_then(Value::as_str).unwrap_or("");
         result.push(TraceEvent {
-            name: bounded_text(name, "trace event name")?,
-            category: bounded_text(category, "trace event category")?,
+            name: bounded_nonempty_text(name, "trace event name")?,
+            category: bounded_text(
+                event.get("cat").and_then(Value::as_str).unwrap_or(""),
+                "trace event category",
+            )?,
             process_id: main_thread.process_id,
             thread_id: main_thread.thread_id,
             start_us,
@@ -277,13 +280,13 @@ fn summarize_complete_events(
     trace_event_count: usize,
     main_thread: ChromiumMainThread,
     events: &[TraceEvent],
-) -> Result<ChromiumTraceSummary> {
+) -> ChromiumTraceSummary {
     let mut stack: Vec<usize> = Vec::new();
     let mut top_level_task_count = 0_usize;
     let mut top_level_duration_us = 0_u64;
     let mut long_task_count = 0_usize;
     let mut long_task_total_duration_us = 0_u64;
-    let mut longest_task_us = None;
+    let mut longest_task_us: Option<u64> = None;
     let mut long_tasks = Vec::new();
     let mut hot_path_aggregates: BTreeMap<Vec<ChromiumHotPathFrame>, Aggregate> = BTreeMap::new();
     let mut hot_paths_truncated = false;
@@ -312,31 +315,26 @@ fn summarize_complete_events(
                 long_task_count += 1;
                 long_task_total_duration_us =
                     long_task_total_duration_us.saturating_add(event.duration_us);
-                longest_task_us = Some(
-                    longest_task_us
-                        .unwrap_or_default()
-                        .max(event.duration_us),
-                );
+                longest_task_us = Some(longest_task_us.unwrap_or_default().max(event.duration_us));
                 retain_long_task(&mut long_tasks, event);
             }
         }
 
-        let runtime_kind = runtime_kind(&event.name, &event.category).to_owned();
-        let runtime = runtime_aggregates.entry(runtime_kind).or_insert((0, 0));
-        runtime.0 = runtime.0.saturating_add(event.duration_us);
-        runtime.1 = runtime.1.saturating_add(1);
+        let runtime = runtime_kind(&event.name, &event.category);
+        let entry = runtime_aggregates.entry(runtime.to_owned()).or_insert((0, 0));
+        entry.0 = entry.0.saturating_add(event.duration_us);
+        entry.1 = entry.1.saturating_add(1);
 
         if let Some((direction, label)) = parse_boundary_marker(&event.name) {
+            let key = (direction.to_owned(), label.to_owned());
             if boundary_aggregates.len() < MAX_UNIQUE_BOUNDARY_MARKERS
-                || boundary_aggregates.contains_key(&(direction.to_owned(), label.to_owned()))
+                || boundary_aggregates.contains_key(&key)
             {
-                let entry = boundary_aggregates
-                    .entry((direction.to_owned(), label.to_owned()))
-                    .or_insert_with(|| BoundaryAggregate {
-                        direction: direction.to_owned(),
-                        label: label.to_owned(),
-                        aggregate: Aggregate::default(),
-                    });
+                let entry = boundary_aggregates.entry(key).or_insert_with(|| BoundaryAggregate {
+                    direction: direction.to_owned(),
+                    label: label.to_owned(),
+                    aggregate: Aggregate::default(),
+                });
                 update_aggregate(&mut entry.aggregate, event.duration_us);
             } else {
                 boundary_markers_truncated = true;
@@ -349,8 +347,7 @@ fn summarize_complete_events(
             .chain(std::iter::once(frame(event)))
             .collect::<Vec<_>>();
         if path.len() > MAX_HOT_PATH_DEPTH {
-            let start = path.len() - MAX_HOT_PATH_DEPTH;
-            path = path.split_off(start);
+            path = path.split_off(path.len() - MAX_HOT_PATH_DEPTH);
             hot_path_depth_truncated = true;
         }
         if hot_path_aggregates.len() < MAX_UNIQUE_HOT_PATHS
@@ -363,7 +360,6 @@ fn summarize_complete_events(
         } else {
             hot_paths_truncated = true;
         }
-
         stack.push(index);
     }
 
@@ -421,7 +417,7 @@ fn summarize_complete_events(
         boundary_markers.truncate(MAX_BOUNDARY_MARKERS);
     }
 
-    Ok(ChromiumTraceSummary {
+    ChromiumTraceSummary {
         schema_version: CHROMIUM_TRACE_SUMMARY_SCHEMA_V1.to_owned(),
         trace_event_count,
         main_thread,
@@ -446,7 +442,7 @@ fn summarize_complete_events(
             "Only the explicitly identified renderer main thread is summarized; worker, compositor, GPU and other threads are outside this slice.".to_owned(),
             "Trace event args are not copied into normalized evidence except the renderer thread name used for main-thread identity.".to_owned(),
         ],
-    })
+    }
 }
 
 fn retain_long_task(long_tasks: &mut Vec<ChromiumLongTask>, event: &TraceEvent) {
@@ -510,10 +506,7 @@ fn hot_path(frames: Vec<ChromiumHotPathFrame>, aggregate: Aggregate) -> Chromium
 
 fn boundary_marker(value: BoundaryAggregate) -> ChromiumBoundaryMarker {
     let identity = format!("{}\0{}", value.direction, value.label);
-    let id = format!(
-        "chromium-boundary-{}",
-        sha256_bytes(identity.as_bytes())
-    );
+    let id = format!("chromium-boundary-{}", sha256_bytes(identity.as_bytes()));
     ChromiumBoundaryMarker {
         id: id.clone(),
         direction: value.direction,
@@ -539,6 +532,9 @@ fn frame(event: &TraceEvent) -> ChromiumHotPathFrame {
 }
 
 fn runtime_kind(name: &str, category: &str) -> &'static str {
+    if parse_boundary_marker(name).is_some() {
+        return "other";
+    }
     let name = name.to_ascii_lowercase();
     let category = category.to_ascii_lowercase();
     if name.contains("webassembly")
@@ -618,6 +614,11 @@ fn nonnegative_us_field_optional(value: &Value, field: &str) -> Result<Option<u6
     Ok(None)
 }
 
+fn bounded_nonempty_text(value: &str, field: &str) -> Result<String> {
+    ensure!(!value.is_empty(), "Chromium trace {field} is empty");
+    bounded_text(value, field)
+}
+
 fn bounded_text(value: &str, field: &str) -> Result<String> {
     ensure!(
         value.len() <= MAX_TEXT_BYTES,
@@ -660,19 +661,15 @@ mod tests {
         assert_eq!(summary.long_task_total_duration_us, 100_000);
         assert_eq!(summary.longest_task_us, Some(100_000));
         assert_eq!(summary.long_tasks[0].name, "RunTask");
-        assert!(
-            summary.hot_paths.iter().any(|path| {
-                path.frames
-                    .iter()
-                    .map(|frame| frame.name.as_str())
-                    .eq(["RunTask", "FunctionCall", "WebAssembly.execute"])
-            })
-        );
-        assert!(
-            summary.runtime_attribution.iter().any(|entry| {
-                entry.runtime_kind == "wasm" && entry.inclusive_duration_us == 40_000
-            })
-        );
+        assert!(summary.hot_paths.iter().any(|path| {
+            path.frames
+                .iter()
+                .map(|frame| frame.name.as_str())
+                .eq(["RunTask", "FunctionCall", "WebAssembly.execute"])
+        }));
+        assert!(summary.runtime_attribution.iter().any(|entry| {
+            entry.runtime_kind == "wasm" && entry.inclusive_duration_us == 40_000
+        }));
         assert_eq!(summary.boundary_marker_count, 1);
         assert_eq!(summary.boundary_markers[0].direction, "js-to-wasm");
         assert_eq!(summary.boundary_markers[0].label, "update-map");
@@ -726,5 +723,8 @@ mod tests {
         assert_eq!(summary.boundary_markers[0].occurrences, 2);
         assert_eq!(summary.boundary_markers[0].total_duration_us, 50);
         assert_eq!(summary.boundary_markers[0].max_duration_us, 30);
+        assert!(summary.runtime_attribution.iter().any(|entry| {
+            entry.runtime_kind == "other" && entry.inclusive_duration_us >= 1_050
+        }));
     }
 }
