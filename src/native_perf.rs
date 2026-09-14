@@ -10,7 +10,8 @@ use serde::Serialize;
 
 use crate::capture::execute_prepared_command;
 use crate::contract::{
-    CollectorPlan, Detection, HOTSPOTS_SCHEMA_V1, Hotspot, HotspotsDocument, Target,
+    CollectorPlan, Detection, HOTSPOTS_SCHEMA_V1, Hotspot, HotspotCallPath,
+    HotspotCallPathFrame, HotspotsDocument, Target,
 };
 use crate::digest::sha256_bytes;
 use crate::scenario::LoadedScenario;
@@ -20,7 +21,9 @@ pub const METRIC_ID: &str = "native-perf.period";
 pub const METRIC_UNIT: &str = "event-count";
 pub const PERF_EVENT: &str = "cycles:u";
 pub const PERF_SAMPLE_PERIOD: u64 = 100_000;
-pub const SYMBOLIZATION_MODE: &str = "perf-report-srcline";
+pub const CALL_GRAPH_RECORD_MODE: &str = "dwarf,4096";
+pub const CALL_GRAPH_REPORT_MODE: &str = "folded,0,32,caller,function,count";
+pub const SYMBOLIZATION_MODE: &str = "perf-report-srcline+folded-dwarf4096";
 pub const TARGET_TOOLCHAIN_KIND: &str = "rustc";
 pub const TARGET_TOOLCHAIN_FINGERPRINT_SCHEMA_V1: &str =
     "runtime-profiler/target-toolchain-fingerprint/rustc-v1";
@@ -31,6 +34,9 @@ const MAX_REPORT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_REPORT_LINES: usize = 100_000;
 const MAX_FIELD_BYTES: usize = 2_048;
 const MAX_HOTSPOTS: usize = 256;
+const MAX_CALL_PATH_FRAMES: usize = 32;
+const MAX_CALL_PATHS_PER_HOTSPOT: usize = 8;
+const MAX_CALL_PATHS_TOTAL: usize = 1_024;
 const MAX_TOOLCHAIN_VERSION_BYTES: usize = 4 * 1024;
 
 #[derive(Debug)]
@@ -45,6 +51,12 @@ struct HotspotKey {
     source_file: Option<String>,
     line: Option<u32>,
     dso: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedCallPaths {
+    paths: Vec<HotspotCallPath>,
+    truncated: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -82,6 +94,7 @@ pub fn collector_plan() -> CollectorPlan {
     let mut configuration = BTreeMap::new();
     configuration.insert("event".to_owned(), PERF_EVENT.to_owned());
     configuration.insert("sample_period".to_owned(), PERF_SAMPLE_PERIOD.to_string());
+    configuration.insert("call_graph".to_owned(), CALL_GRAPH_RECORD_MODE.to_owned());
     configuration.insert("symbolization".to_owned(), SYMBOLIZATION_MODE.to_owned());
     configuration.insert(
         "target_toolchain_fingerprint_schema".to_owned(),
@@ -121,6 +134,8 @@ pub fn capture_native_perf(loaded: &LoadedScenario) -> Result<NativePerfCapture>
         .arg(PERF_EVENT)
         .arg("--count")
         .arg(PERF_SAMPLE_PERIOD.to_string())
+        .arg("--call-graph")
+        .arg(CALL_GRAPH_RECORD_MODE)
         .arg("--output")
         .arg(&perf_data)
         .arg("--")
@@ -145,6 +160,7 @@ pub fn capture_native_perf(loaded: &LoadedScenario) -> Result<NativePerfCapture>
             "--sort=srcline,symbol,dso",
             "--fields=sample,period,srcline,symbol,dso",
             "--field-separator=\t",
+            "--call-graph=none",
         ])
         .stdin(Stdio::null())
         .output()
@@ -159,13 +175,40 @@ pub fn capture_native_perf(loaded: &LoadedScenario) -> Result<NativePerfCapture>
         "perf report exceeds the {} byte safety limit",
         MAX_REPORT_BYTES
     );
-    let raw_report = String::from_utf8(report.stdout).context("perf report output is not UTF-8")?;
-    let hotspots = parse_perf_report(
-        &raw_report,
+    let flat_report =
+        String::from_utf8(report.stdout).context("perf report output is not UTF-8")?;
+
+    let call_graph_report = Command::new("perf")
+        .args(["report", "--stdio", "--quiet", "--no-children"])
+        .arg("--input")
+        .arg(&perf_data)
+        .args(["--percent-limit=0", "--sort=symbol", "--fields=none"])
+        .arg(format!("--call-graph={CALL_GRAPH_REPORT_MODE}"))
+        .stdin(Stdio::null())
+        .output()
+        .context("failed to run perf folded call-path report")?;
+    ensure!(
+        call_graph_report.status.success(),
+        "perf folded call-path report failed with status {}",
+        call_graph_report.status
+    );
+    ensure!(
+        call_graph_report.stdout.len() <= MAX_REPORT_BYTES,
+        "perf folded call-path report exceeds the {} byte safety limit",
+        MAX_REPORT_BYTES
+    );
+    let call_graph_report = String::from_utf8(call_graph_report.stdout)
+        .context("perf folded call-path report output is not UTF-8")?;
+
+    let mut hotspots = parse_perf_report(
+        &flat_report,
         loaded,
         tool_version,
         target_toolchain_fingerprint,
     )?;
+    let call_paths = parse_folded_call_paths(&call_graph_report)?;
+    attach_call_paths(&mut hotspots, &call_paths);
+    let raw_report = combine_raw_reports(&flat_report, &call_graph_report);
 
     Ok(NativePerfCapture {
         hotspots,
@@ -194,7 +237,21 @@ fn perf_version() -> Option<String> {
 
 fn perf_recording_probe() -> bool {
     Command::new("perf")
-        .args(["stat", "--event", PERF_EVENT, "--", "true"])
+        .args([
+            "record",
+            "--quiet",
+            "--no-buildid-cache",
+            "--event",
+            PERF_EVENT,
+            "--count",
+            "100000",
+            "--call-graph",
+            CALL_GRAPH_RECORD_MODE,
+            "--output",
+            "/dev/null",
+            "--",
+            "true",
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -229,7 +286,7 @@ fn detection_from_probe(
         return Detection {
             available: false,
             reason: format!(
-                "{version} is installed but cannot record the `{PERF_EVENT}` event in this environment"
+                "{version} is installed but cannot record `{PERF_EVENT}` with `{CALL_GRAPH_RECORD_MODE}` call graphs in this environment"
             ),
             tool_version: Some(version.to_owned()),
         };
@@ -238,7 +295,7 @@ fn detection_from_probe(
     Detection {
         available: true,
         reason: format!(
-            "implemented: {version} can record `{PERF_EVENT}` for bounded native hotspot evidence"
+            "implemented: {version} can record `{PERF_EVENT}` with bounded `{CALL_GRAPH_RECORD_MODE}` call graphs"
         ),
         tool_version: Some(version.to_owned()),
     }
@@ -389,6 +446,8 @@ fn parse_perf_report(
                 weight,
                 samples,
                 confidence,
+                call_paths: Vec::new(),
+                call_paths_truncated: false,
                 evidence_ref: format!("hotspots.json#{id}"),
             }
         })
@@ -439,6 +498,151 @@ fn parse_perf_report(
         truncated,
         hotspots,
     })
+}
+
+fn parse_folded_call_paths(report: &str) -> Result<BTreeMap<String, ParsedCallPaths>> {
+    ensure!(
+        report.len() <= MAX_REPORT_BYTES,
+        "perf folded call-path report exceeds the {} byte safety limit",
+        MAX_REPORT_BYTES
+    );
+
+    let mut aggregated: BTreeMap<String, BTreeMap<Vec<String>, u64>> = BTreeMap::new();
+    let mut processed_lines = 0_usize;
+    let mut unique_paths = 0_usize;
+
+    for line in report.lines() {
+        processed_lines += 1;
+        ensure!(
+            processed_lines <= MAX_REPORT_LINES,
+            "perf folded call-path report exceeds the {} line safety limit",
+            MAX_REPORT_LINES
+        );
+        ensure!(
+            line.len() <= MAX_FIELD_BYTES * MAX_CALL_PATH_FRAMES,
+            "perf folded call-path line exceeds the safety limit"
+        );
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let (samples, stack) = parse_folded_call_path_line(trimmed)?;
+        ensure!(samples > 0, "perf folded call-path sample count must be positive");
+        let frames = stack
+            .split(';')
+            .map(|frame| bounded_field(frame, "call-path symbol"))
+            .collect::<Result<Vec<_>>>()?;
+        ensure!(!frames.is_empty(), "perf folded call path is empty");
+        ensure!(
+            frames.len() <= MAX_CALL_PATH_FRAMES,
+            "perf folded call path exceeds the {} frame safety limit",
+            MAX_CALL_PATH_FRAMES
+        );
+        let leaf = frames
+            .last()
+            .context("perf folded call path has no leaf frame")?
+            .clone();
+        let leaf_paths = aggregated.entry(leaf).or_default();
+        if !leaf_paths.contains_key(&frames) {
+            unique_paths += 1;
+            ensure!(
+                unique_paths <= MAX_CALL_PATHS_TOTAL,
+                "perf folded call-path report exceeds the {} unique path safety limit",
+                MAX_CALL_PATHS_TOTAL
+            );
+        }
+        let count = leaf_paths.entry(frames).or_default();
+        *count = count.saturating_add(samples);
+    }
+
+    let mut result = BTreeMap::new();
+    for (leaf, paths) in aggregated {
+        let mut paths = paths.into_iter().collect::<Vec<_>>();
+        paths.sort_by(|(left_frames, left_samples), (right_frames, right_samples)| {
+            right_samples
+                .cmp(left_samples)
+                .then_with(|| left_frames.cmp(right_frames))
+        });
+        let truncated = paths.len() > MAX_CALL_PATHS_PER_HOTSPOT;
+        paths.truncate(MAX_CALL_PATHS_PER_HOTSPOT);
+        let paths = paths
+            .into_iter()
+            .map(|(frames, samples)| {
+                let identity = format!("{}\0{}\0{}", METRIC_ID, leaf, frames.join("\0"));
+                let id = format!("call-path-{}", sha256_bytes(identity.as_bytes()));
+                HotspotCallPath {
+                    id: id.clone(),
+                    frames: frames
+                        .into_iter()
+                        .map(|symbol| HotspotCallPathFrame { symbol })
+                        .collect(),
+                    samples,
+                    evidence_ref: format!("hotspots.json#{id}"),
+                }
+            })
+            .collect();
+        result.insert(leaf, ParsedCallPaths { paths, truncated });
+    }
+    Ok(result)
+}
+
+fn parse_folded_call_path_line(line: &str) -> Result<(u64, &str)> {
+    if let Some(index) = line.find(|character: char| character.is_whitespace()) {
+        let (first, rest) = line.split_at(index);
+        if let Some(samples) = try_parse_u64(first) {
+            let stack = rest.trim();
+            ensure!(!stack.is_empty(), "perf folded call-path stack is empty");
+            return Ok((samples, stack));
+        }
+    }
+
+    if let Some(index) = line.rfind(|character: char| character.is_whitespace()) {
+        let (stack, last) = line.split_at(index);
+        if let Some(samples) = try_parse_u64(last.trim()) {
+            let stack = stack.trim();
+            ensure!(!stack.is_empty(), "perf folded call-path stack is empty");
+            return Ok((samples, stack));
+        }
+    }
+
+    bail!("malformed perf folded call-path row: missing sample count")
+}
+
+fn try_parse_u64(value: &str) -> Option<u64> {
+    let normalized: String = value
+        .trim()
+        .chars()
+        .filter(|character| !matches!(character, ',' | '_'))
+        .collect();
+    normalized.parse::<u64>().ok()
+}
+
+fn attach_call_paths(
+    hotspots: &mut HotspotsDocument,
+    call_paths: &BTreeMap<String, ParsedCallPaths>,
+) {
+    for hotspot in &mut hotspots.hotspots {
+        if let Some(paths) = call_paths.get(&hotspot.symbol) {
+            hotspot.call_paths = paths.paths.clone();
+            hotspot.call_paths_truncated = paths.truncated;
+        }
+    }
+}
+
+fn combine_raw_reports(flat_report: &str, call_graph_report: &str) -> String {
+    let mut combined = String::with_capacity(flat_report.len() + call_graph_report.len() + 64);
+    combined.push_str(flat_report);
+    if !combined.ends_with('\n') {
+        combined.push('\n');
+    }
+    combined.push_str("# runtime-profiler folded call paths\n");
+    for line in call_graph_report.lines() {
+        combined.push_str("# call-path\t");
+        combined.push_str(line);
+        combined.push('\n');
+    }
+    combined
 }
 
 fn parse_u64_field(value: &str, field: &str) -> Result<u64> {
@@ -681,6 +885,45 @@ mod tests {
         assert_eq!(hotspots.hotspots[2].symbol, "work");
         assert_eq!(hotspots.hotspots[2].weight, 300);
         assert_eq!(hotspots.hotspots[2].samples, 3);
+        assert!(hotspots.hotspots[2].call_paths.is_empty());
+    }
+
+    #[test]
+    fn folded_call_paths_are_aggregated_and_attached_deterministically() {
+        let flat_report = "3\t300\tsrc/main.rs:10\twork\texample\n";
+        let mut hotspots = parse_perf_report(
+            flat_report,
+            &loaded_scenario(),
+            "perf version test".to_owned(),
+            Some("toolchain-fingerprint".to_owned()),
+        )
+        .expect("parse flat report");
+        let call_paths = parse_folded_call_paths(
+            "2 main;dispatch;work\nmain;dispatch;work 3\n1 main;fallback;work\n",
+        )
+        .expect("parse folded call paths");
+        attach_call_paths(&mut hotspots, &call_paths);
+
+        let work = &hotspots.hotspots[0];
+        assert_eq!(work.call_paths.len(), 2);
+        assert!(!work.call_paths_truncated);
+        assert_eq!(work.call_paths[0].samples, 5);
+        assert_eq!(
+            work.call_paths[0]
+                .frames
+                .iter()
+                .map(|frame| frame.symbol.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main", "dispatch", "work"]
+        );
+        assert_eq!(work.call_paths[1].samples, 1);
+    }
+
+    #[test]
+    fn folded_call_paths_reject_missing_sample_counts() {
+        let error = parse_folded_call_paths("main;dispatch;work\n")
+            .expect_err("missing call-path sample count must fail");
+        assert!(error.to_string().contains("missing sample count"));
     }
 
     #[test]
