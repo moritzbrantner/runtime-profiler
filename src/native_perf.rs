@@ -126,7 +126,9 @@ pub fn capture_native_perf(loaded: &LoadedScenario) -> Result<NativePerfCapture>
     let temp = create_temp_capture_directory()?;
     let perf_data = temp.path.join("perf.data");
 
-    let Target::Command { program, args, .. } = &loaded.scenario.target;
+    let Target::Command { program, args, .. } = &loaded.scenario.target else {
+        bail!("native-perf collector requires a command target");
+    };
     let mut record = Command::new("perf");
     record
         .args(["record", "--quiet", "--no-buildid-cache", "--period"])
@@ -360,12 +362,13 @@ fn parse_perf_report(
     );
 
     let root = source_root(loaded);
-    let target_program = match &loaded.scenario.target {
-        Target::Command { program, .. } => Path::new(program)
-            .file_name()
-            .and_then(|value| value.to_str())
-            .unwrap_or(program),
+    let Target::Command { program, .. } = &loaded.scenario.target else {
+        bail!("native-perf report parsing requires a command target");
     };
+    let target_program = Path::new(program)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or(program);
     let mut aggregated: BTreeMap<HotspotKey, (u64, u64)> = BTreeMap::new();
     let mut processed_lines = 0_usize;
 
@@ -761,6 +764,7 @@ fn source_root(loaded: &LoadedScenario) -> Option<PathBuf> {
             ..
         } => Some(scenario_directory.join(directory)),
         Target::Command { .. } => Some(scenario_directory.to_path_buf()),
+        Target::BrowserJourney { .. } => None,
     }
 }
 

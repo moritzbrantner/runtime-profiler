@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://runtime-profiler.local/schemas/browser-runtime.schema.json",
+  "title": "runtime-profiler browser runtime v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "adapter_version",
+    "node_version",
+    "playwright_version",
+    "browser_name",
+    "browser_version",
+    "viewport",
+    "trace_categories"
+  ],
+  "properties": {
+    "schema_version": { "const": "runtime-profiler/browser-runtime/v1" },
+    "adapter_version": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "node_version": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "playwright_version": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "browser_name": { "const": "chromium" },
+    "browser_version": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "viewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "trace_categories": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

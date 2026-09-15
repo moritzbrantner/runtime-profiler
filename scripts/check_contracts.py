@@ -115,6 +115,7 @@ def check_required_files() -> None:
         "schemas/score.schema.json",
         "schemas/hotspots.schema.json",
         "schemas/chromium-trace-summary.schema.json",
+        "schemas/browser-runtime.schema.json",
         "schemas/agent-guidance.schema.json",
     }
     missing = sorted(path for path in required if not (ROOT / path).is_file())

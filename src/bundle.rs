@@ -8,13 +8,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
+use crate::browser_chromium::{
+    BROWSER_RUNTIME_ARTIFACT, BROWSER_RUNTIME_MEDIA_TYPE, BROWSER_RUNTIME_SCHEMA_V1,
+    BrowserRuntimeDocument, RAW_TRACE_ARTIFACT, RAW_TRACE_MEDIA_TYPE, TRACE_SUMMARY_ARTIFACT,
+    TRACE_SUMMARY_MEDIA_TYPE, capture_browser_chromium, validate_runtime_metadata,
+};
 use crate::capture::{capture_metrics, ensure_not_interrupted};
+use crate::chromium_trace::{CHROMIUM_TRACE_SUMMARY_SCHEMA_V1, ChromiumTraceSummary};
 use crate::contract::{
     AgentGuidance, AgentObservation, ArtifactEntry, BundleManifest, Collector,
     ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0, ENVIRONMENT_FINGERPRINT_SCHEMA_V1,
     ENVIRONMENT_SCHEMA_V1, EnvironmentDocument, GUIDANCE_SCHEMA_V1, HOTSPOTS_SCHEMA_V1,
     HotspotsDocument, MANIFEST_SCHEMA_V1, METRICS_SCHEMA_V1, MetricSummary, MetricsDocument,
-    SCENARIO_EVIDENCE_SCHEMA_V1, ScenarioEvidence, SourceIdentity, ValidationReport,
+    SCENARIO_EVIDENCE_SCHEMA_V1, ScenarioEvidence, SourceIdentity, Target, TargetEvidence,
+    ValidationReport,
 };
 use crate::digest::{sha256_bytes, sha256_file};
 use crate::native_perf::{
@@ -30,7 +37,12 @@ const REQUIRED_ARTIFACTS: [(&str, &str); 5] = [
     ("hotspots.json", "application/json"),
     ("agent-guidance.json", "application/json"),
 ];
-const OPTIONAL_ARTIFACTS: [(&str, &str); 1] = [(RAW_REPORT_ARTIFACT, RAW_REPORT_MEDIA_TYPE)];
+const OPTIONAL_ARTIFACTS: [(&str, &str); 4] = [
+    (RAW_REPORT_ARTIFACT, RAW_REPORT_MEDIA_TYPE),
+    (RAW_TRACE_ARTIFACT, RAW_TRACE_MEDIA_TYPE),
+    (TRACE_SUMMARY_ARTIFACT, TRACE_SUMMARY_MEDIA_TYPE),
+    (BROWSER_RUNTIME_ARTIFACT, BROWSER_RUNTIME_MEDIA_TYPE),
+];
 
 #[derive(Serialize)]
 struct EnvironmentFingerprintInput<'a> {
@@ -53,7 +65,16 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     ensure_not_interrupted()?;
     let environment = detect_environment()?;
     ensure_not_interrupted()?;
-    let metrics = capture_metrics(&scenario)?;
+
+    let metrics = match scenario.scenario.target {
+        Target::Command { .. } => capture_metrics(&scenario)?,
+        Target::BrowserJourney { .. } => MetricsDocument {
+            schema_version: METRICS_SCHEMA_V1.to_owned(),
+            scenario_id: scenario.scenario.id.clone(),
+            samples: Vec::new(),
+            metrics: Vec::new(),
+        },
+    };
     ensure_not_interrupted()?;
 
     let (hotspots, raw_native_perf_report) = if scenario
@@ -68,7 +89,7 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
             HotspotsDocument {
                 schema_version: HOTSPOTS_SCHEMA_V1.to_owned(),
                 status: "not-collected".to_owned(),
-                reason: "No source-level profiler adapter was requested by this v1 scenario"
+                reason: "No native source-level profiler adapter was requested by this scenario"
                     .to_owned(),
                 collector: None,
                 tool_version: None,
@@ -88,22 +109,29 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
             None,
         )
     };
-    let guidance = build_guidance(&metrics, &hotspots);
     ensure_not_interrupted()?;
 
+    let browser_capture = if scenario
+        .scenario
+        .collectors
+        .contains(&Collector::BrowserChromium)
+    {
+        Some(capture_browser_chromium(&scenario)?)
+    } else {
+        None
+    };
+    ensure_not_interrupted()?;
+
+    let guidance = build_guidance(&metrics, &hotspots);
     fs::create_dir_all(output)
         .with_context(|| format!("failed to create bundle directory: {}", output.display()))?;
     ensure_not_interrupted()?;
+
     write_json(&output.join("scenario.json"), &scenario.evidence())?;
-    ensure_not_interrupted()?;
     write_json(&output.join("environment.json"), &environment)?;
-    ensure_not_interrupted()?;
     write_json(&output.join("metrics.json"), &metrics)?;
-    ensure_not_interrupted()?;
     write_json(&output.join("hotspots.json"), &hotspots)?;
-    ensure_not_interrupted()?;
     write_json(&output.join("agent-guidance.json"), &guidance)?;
-    ensure_not_interrupted()?;
     if let Some(report) = &raw_native_perf_report {
         fs::write(output.join(RAW_REPORT_ARTIFACT), report).with_context(|| {
             format!(
@@ -112,16 +140,21 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
             )
         })?;
     }
+    if let Some(capture) = &browser_capture {
+        fs::write(output.join(RAW_TRACE_ARTIFACT), &capture.trace).with_context(|| {
+            format!(
+                "failed to write Chromium trace: {}",
+                output.join(RAW_TRACE_ARTIFACT).display()
+            )
+        })?;
+        write_json(&output.join(TRACE_SUMMARY_ARTIFACT), &capture.summary)?;
+        write_json(&output.join(BROWSER_RUNTIME_ARTIFACT), &capture.runtime)?;
+    }
     ensure_not_interrupted()?;
 
-    let mut files = Vec::with_capacity(
-        REQUIRED_ARTIFACTS.len()
-            + if raw_native_perf_report.is_some() {
-                1
-            } else {
-                0
-            },
-    );
+    let optional_count = usize::from(raw_native_perf_report.is_some())
+        + if browser_capture.is_some() { 3 } else { 0 };
+    let mut files = Vec::with_capacity(REQUIRED_ARTIFACTS.len() + optional_count);
     for (path, media_type) in REQUIRED_ARTIFACTS {
         ensure_not_interrupted()?;
         files.push(ArtifactEntry {
@@ -131,11 +164,28 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         });
     }
     if raw_native_perf_report.is_some() {
-        files.push(ArtifactEntry {
-            path: RAW_REPORT_ARTIFACT.to_owned(),
-            media_type: RAW_REPORT_MEDIA_TYPE.to_owned(),
-            sha256: sha256_file(&output.join(RAW_REPORT_ARTIFACT))?,
-        });
+        files.push(artifact_entry(
+            output,
+            RAW_REPORT_ARTIFACT,
+            RAW_REPORT_MEDIA_TYPE,
+        )?);
+    }
+    if browser_capture.is_some() {
+        files.push(artifact_entry(
+            output,
+            RAW_TRACE_ARTIFACT,
+            RAW_TRACE_MEDIA_TYPE,
+        )?);
+        files.push(artifact_entry(
+            output,
+            TRACE_SUMMARY_ARTIFACT,
+            TRACE_SUMMARY_MEDIA_TYPE,
+        )?);
+        files.push(artifact_entry(
+            output,
+            BROWSER_RUNTIME_ARTIFACT,
+            BROWSER_RUNTIME_MEDIA_TYPE,
+        )?);
     }
     ensure_not_interrupted()?;
 
@@ -160,11 +210,17 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         source: environment.source,
         files,
     };
-    ensure_not_interrupted()?;
     write_json(&output.join("manifest.json"), &manifest)?;
     ensure_not_interrupted()?;
-
     Ok(manifest)
+}
+
+fn artifact_entry(output: &Path, path: &str, media_type: &str) -> Result<ArtifactEntry> {
+    Ok(ArtifactEntry {
+        path: path.to_owned(),
+        media_type: media_type.to_owned(),
+        sha256: sha256_file(&output.join(path))?,
+    })
 }
 
 pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
@@ -258,16 +314,15 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
         ));
     }
     validate_hotspot_artifacts(&scenario, &manifest, &hotspots, &mut diagnostics);
+    validate_browser_artifacts(bundle, &scenario, &manifest, &metrics, &mut diagnostics)?;
 
-    let report = ValidationReport {
+    Ok(ValidationReport {
         schema_version: "runtime-profiler/validation/v1".to_owned(),
         bundle_id: manifest.bundle_id,
         valid: diagnostics.is_empty(),
         verified_files,
         diagnostics,
-    };
-
-    Ok(report)
+    })
 }
 
 fn validate_artifact_set(manifest: &BundleManifest, diagnostics: &mut Vec<String>) {
@@ -351,15 +406,72 @@ fn validate_hotspot_artifacts(
     } else {
         if raw_report_present {
             diagnostics.push(
-                "process-only scenario unexpectedly contains native-perf raw evidence".to_owned(),
+                "non-native scenario unexpectedly contains native-perf raw evidence".to_owned(),
             );
         }
         if hotspots.status == "collected" || hotspots.collector.is_some() {
             diagnostics.push(
-                "process-only scenario unexpectedly claims collected hotspot evidence".to_owned(),
+                "non-native scenario unexpectedly claims collected native hotspot evidence"
+                    .to_owned(),
             );
         }
     }
+}
+
+fn validate_browser_artifacts(
+    bundle: &Path,
+    scenario: &ScenarioEvidence,
+    manifest: &BundleManifest,
+    metrics: &MetricsDocument,
+    diagnostics: &mut Vec<String>,
+) -> Result<()> {
+    let browser_requested = scenario.collectors.contains(&Collector::BrowserChromium);
+    let browser_paths = [
+        RAW_TRACE_ARTIFACT,
+        TRACE_SUMMARY_ARTIFACT,
+        BROWSER_RUNTIME_ARTIFACT,
+    ];
+    let browser_presence =
+        browser_paths.map(|path| manifest.files.iter().any(|artifact| artifact.path == path));
+
+    if browser_requested {
+        if !matches!(scenario.target, TargetEvidence::BrowserJourney { .. }) {
+            diagnostics
+                .push("browser-chromium collector requires browser-journey evidence".to_owned());
+        }
+        if !browser_presence.iter().all(|present| *present) {
+            diagnostics
+                .push("browser journey is missing Chromium trace evidence artifacts".to_owned());
+            return Ok(());
+        }
+        if !metrics.metrics.is_empty() || !metrics.samples.is_empty() {
+            diagnostics.push(
+                "browser journey must not relabel Playwright driver process measurements as application metrics"
+                    .to_owned(),
+            );
+        }
+        let summary: ChromiumTraceSummary = read_json(&bundle.join(TRACE_SUMMARY_ARTIFACT))?;
+        if summary.schema_version != CHROMIUM_TRACE_SUMMARY_SCHEMA_V1 {
+            diagnostics.push(format!(
+                "unsupported Chromium trace summary schema: {}",
+                summary.schema_version
+            ));
+        }
+        let runtime: BrowserRuntimeDocument = read_json(&bundle.join(BROWSER_RUNTIME_ARTIFACT))?;
+        if runtime.schema_version != BROWSER_RUNTIME_SCHEMA_V1 {
+            diagnostics.push(format!(
+                "unsupported browser runtime schema: {}",
+                runtime.schema_version
+            ));
+        }
+        if let Err(error) = validate_runtime_metadata(&runtime) {
+            diagnostics.push(format!("invalid browser runtime metadata: {error}"));
+        }
+    } else if browser_presence.iter().any(|present| *present) {
+        diagnostics
+            .push("non-browser scenario unexpectedly contains browser trace evidence".to_owned());
+    }
+    Ok(())
 }
 
 pub fn summarize_bundle(bundle: &Path) -> Result<MetricsDocument> {

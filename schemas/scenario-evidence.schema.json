@@ -10,6 +10,20 @@
     "id": { "type": "string", "minLength": 1 },
     "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "target": {
+      "oneOf": [
+        { "$ref": "#/$defs/commandTargetEvidence" },
+        { "$ref": "#/$defs/browserJourneyTargetEvidence" }
+      ]
+    },
+    "run": { "$ref": "scenario.schema.json#/$defs/run" },
+    "collectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "enum": ["process", "native-perf", "browser-chromium"] }
+    }
+  },
+  "$defs": {
+    "commandTargetEvidence": {
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -30,11 +44,24 @@
         }
       }
     },
-    "run": { "$ref": "scenario.schema.json#/$defs/run" },
-    "collectors": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "enum": ["process", "native-perf"] }
+    "browserJourneyTargetEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_type",
+        "module",
+        "working_directory_set",
+        "inherited_environment_names"
+      ],
+      "properties": {
+        "target_type": { "const": "browser-journey" },
+        "module": { "type": "string", "minLength": 1 },
+        "working_directory_set": { "type": "boolean" },
+        "inherited_environment_names": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
     }
   }
 }

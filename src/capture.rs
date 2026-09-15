@@ -29,10 +29,6 @@ static INTERRUPTED: OnceLock<Arc<AtomicBool>> = OnceLock::new();
 #[cfg(unix)]
 static CLI_HANDLERS_INSTALLED: AtomicBool = AtomicBool::new(false);
 
-/// Installs process-lifetime interruption handling for the short-lived CLI.
-///
-/// Library callers do not install signal handlers; an embedding application
-/// retains ownership of its process-global signal policy.
 #[cfg(unix)]
 pub fn install_cli_interruption_handlers() -> Result<()> {
     if CLI_HANDLERS_INSTALLED.swap(true, Ordering::SeqCst) {
@@ -72,6 +68,10 @@ pub(crate) fn ensure_not_interrupted() -> Result<()> {
 }
 
 pub fn capture_metrics(loaded: &LoadedScenario) -> Result<MetricsDocument> {
+    if !matches!(loaded.scenario.target, Target::Command { .. }) {
+        bail!("process metrics require a command target");
+    }
+
     for warmup in 0..loaded.scenario.run.warmup_iterations {
         let result = execute_once(loaded, warmup + 1)
             .with_context(|| format!("warm-up iteration {} failed to execute", warmup + 1))?;
@@ -145,7 +145,9 @@ fn memory_metric_summaries(samples: &[MeasurementSample]) -> Vec<MetricSummary> 
 }
 
 fn execute_once(loaded: &LoadedScenario, iteration: u32) -> Result<MeasurementSample> {
-    let Target::Command { program, args, .. } = &loaded.scenario.target;
+    let Target::Command { program, args, .. } = &loaded.scenario.target else {
+        bail!("process measurement requires a command target");
+    };
 
     let mut command = Command::new(program);
     command.args(args);
@@ -206,11 +208,27 @@ pub(crate) fn execute_prepared_command(
 }
 
 fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
-    let Target::Command {
-        working_directory,
-        inherit_env,
-        ..
-    } = &loaded.scenario.target;
+    let (inherit_env, working_directory) = match &loaded.scenario.target {
+        Target::Command {
+            working_directory,
+            inherit_env,
+            ..
+        } => (
+            inherit_env,
+            resolve_working_directory(loaded, working_directory.as_deref()),
+        ),
+        Target::BrowserJourney {
+            working_directory,
+            inherit_env,
+            ..
+        } => (
+            inherit_env,
+            Some(resolve_browser_working_directory(
+                loaded,
+                working_directory.as_deref(),
+            )),
+        ),
+    };
 
     command.stdin(Stdio::null());
     command.stdout(Stdio::null());
@@ -224,7 +242,7 @@ fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
             command.env(name, value);
         }
     }
-    if let Some(directory) = resolve_working_directory(loaded, working_directory.as_deref()) {
+    if let Some(directory) = working_directory {
         command.current_dir(directory);
     }
     #[cfg(unix)]
@@ -253,17 +271,35 @@ fn resolve_working_directory(
     loaded: &LoadedScenario,
     configured: Option<&Path>,
 ) -> Option<PathBuf> {
-    configured.map(|path| {
-        if path.is_absolute() {
-            path.to_path_buf()
-        } else {
+    configured.map(|path| resolve_path_from_scenario(loaded, path))
+}
+
+fn resolve_browser_working_directory(
+    loaded: &LoadedScenario,
+    configured: Option<&Path>,
+) -> PathBuf {
+    configured.map_or_else(
+        || {
             loaded
                 .source_path
                 .parent()
                 .unwrap_or_else(|| Path::new("."))
-                .join(path)
-        }
-    })
+                .to_path_buf()
+        },
+        |path| resolve_path_from_scenario(loaded, path),
+    )
+}
+
+fn resolve_path_from_scenario(loaded: &LoadedScenario, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        loaded
+            .source_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(path)
+    }
 }
 
 fn sample_from_status(
@@ -332,6 +368,7 @@ pub fn statistics(values: &[f64]) -> Statistics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract::{Collector, RunConfig, Scenario};
 
     #[test]
     fn calculates_statistics() {
@@ -361,5 +398,33 @@ mod tests {
         assert_eq!(metrics[0].statistics, metrics[1].statistics);
         assert_eq!(metrics[1].unit, "KiB");
         assert_eq!(metrics[1].preferred_direction, PreferredDirection::Lower);
+    }
+
+    #[test]
+    fn browser_without_explicit_working_directory_uses_scenario_directory() {
+        let loaded = LoadedScenario {
+            scenario: Scenario {
+                schema_version: "runtime-profiler/scenario/v1".to_owned(),
+                id: "browser".to_owned(),
+                target: Target::BrowserJourney {
+                    module: PathBuf::from("journey.mjs"),
+                    working_directory: None,
+                    inherit_env: Vec::new(),
+                },
+                run: RunConfig {
+                    warmup_iterations: 0,
+                    measurement_iterations: 1,
+                    timeout_seconds: 30,
+                },
+                collectors: vec![Collector::BrowserChromium],
+            },
+            source_path: PathBuf::from("profiles/browser.json"),
+            digest: "digest".to_owned(),
+        };
+
+        assert_eq!(
+            resolve_browser_working_directory(&loaded, None),
+            PathBuf::from("profiles")
+        );
     }
 }

@@ -1,9 +1,10 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail, ensure};
 
+use crate::browser_chromium;
 use crate::capture::resident_memory_sampling_supported;
 use crate::contract::{
     CapturePlan, Collector, CollectorPlan, PROCESS_MAX_OBSERVED_RSS_ID, PROCESS_MAX_RSS_V1_ID,
@@ -27,7 +28,11 @@ impl LoadedScenario {
             schema_version: "runtime-profiler/plan/v1".to_owned(),
             scenario_id: self.scenario.id.clone(),
             scenario_digest: self.digest.clone(),
-            target_type: "command".to_owned(),
+            target_type: match self.scenario.target {
+                Target::Command { .. } => "command",
+                Target::BrowserJourney { .. } => "browser-journey",
+            }
+            .to_owned(),
             collectors: self
                 .scenario
                 .collectors
@@ -42,6 +47,7 @@ impl LoadedScenario {
                         configuration: BTreeMap::new(),
                     },
                     Collector::NativePerf => native_perf::collector_plan(),
+                    Collector::BrowserChromium => browser_chromium::collector_plan(),
                 })
                 .collect(),
             warmup_iterations: self.scenario.run.warmup_iterations,
@@ -52,24 +58,34 @@ impl LoadedScenario {
 
     #[must_use]
     pub fn evidence(&self) -> ScenarioEvidence {
-        let Target::Command {
-            program,
-            args,
-            working_directory,
-            inherit_env,
-        } = &self.scenario.target;
-
-        ScenarioEvidence {
-            schema_version: SCENARIO_EVIDENCE_SCHEMA_V1.to_owned(),
-            id: self.scenario.id.clone(),
-            digest: self.digest.clone(),
-            target: TargetEvidence {
-                target_type: "command".to_owned(),
+        let target = match &self.scenario.target {
+            Target::Command {
+                program,
+                args,
+                working_directory,
+                inherit_env,
+            } => TargetEvidence::Command {
                 program: program.clone(),
                 argument_count: args.len(),
                 working_directory_set: working_directory.is_some(),
                 inherited_environment_names: inherit_env.clone(),
             },
+            Target::BrowserJourney {
+                module,
+                working_directory,
+                inherit_env,
+            } => TargetEvidence::BrowserJourney {
+                module: module.to_string_lossy().into_owned(),
+                working_directory_set: working_directory.is_some(),
+                inherited_environment_names: inherit_env.clone(),
+            },
+        };
+
+        ScenarioEvidence {
+            schema_version: SCENARIO_EVIDENCE_SCHEMA_V1.to_owned(),
+            id: self.scenario.id.clone(),
+            digest: self.digest.clone(),
+            target,
             run: self.scenario.run.clone(),
             collectors: self.scenario.collectors.clone(),
         }
@@ -125,22 +141,7 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         "unsupported scenario schema: {}",
         scenario.schema_version
     );
-    ensure!(
-        !scenario.id.trim().is_empty(),
-        "scenario id must not be empty"
-    );
-    ensure!(
-        scenario.id.len() <= 128,
-        "scenario id must be at most 128 characters"
-    );
-    ensure!(
-        scenario
-            .id
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric()
-                || matches!(character, '-' | '_' | '.')),
-        "scenario id may contain only ASCII letters, digits, dash, underscore, and dot"
-    );
+    validate_scenario_id(&scenario.id)?;
     ensure!(
         scenario.run.warmup_iterations <= 100,
         "warmup_iterations must be at most 100"
@@ -157,19 +158,53 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         !scenario.collectors.is_empty(),
         "at least one collector is required"
     );
+
+    match &scenario.target {
+        Target::Command {
+            program,
+            args,
+            inherit_env,
+            ..
+        } => validate_command_target(scenario, program, args, inherit_env),
+        Target::BrowserJourney {
+            module,
+            inherit_env,
+            ..
+        } => validate_browser_target(scenario, module, inherit_env),
+    }
+}
+
+fn validate_scenario_id(id: &str) -> Result<()> {
+    ensure!(!id.trim().is_empty(), "scenario id must not be empty");
+    ensure!(
+        id.len() <= 128,
+        "scenario id must be at most 128 characters"
+    );
+    ensure!(
+        id.chars()
+            .all(|character| character.is_ascii_alphanumeric()
+                || matches!(character, '-' | '_' | '.')),
+        "scenario id may contain only ASCII letters, digits, dash, underscore, and dot"
+    );
+    Ok(())
+}
+
+fn validate_command_target(
+    scenario: &Scenario,
+    program: &str,
+    args: &[String],
+    inherit_env: &[String],
+) -> Result<()> {
+    ensure!(
+        !scenario.collectors.contains(&Collector::BrowserChromium),
+        "browser-chromium requires a browser-journey target"
+    );
     if scenario.collectors.contains(&Collector::NativePerf) {
         ensure!(
             scenario.collectors.contains(&Collector::Process),
             "native-perf currently requires the process collector so runtime evidence remains comparable"
         );
     }
-
-    let Target::Command {
-        program,
-        args,
-        inherit_env,
-        ..
-    } = &scenario.target;
     ensure!(
         !program.trim().is_empty(),
         "target program must not be empty"
@@ -181,6 +216,30 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
     if args.iter().any(|argument| argument.contains('\0')) {
         bail!("target argument contains a null byte");
     }
+    validate_inherit_env(inherit_env)
+}
+
+fn validate_browser_target(
+    scenario: &Scenario,
+    module: &Path,
+    inherit_env: &[String],
+) -> Result<()> {
+    ensure!(
+        scenario.collectors == [Collector::BrowserChromium],
+        "browser-journey currently requires exactly the browser-chromium collector"
+    );
+    ensure!(
+        scenario.run.warmup_iterations == 0 && scenario.run.measurement_iterations == 1,
+        "browser-journey v1 requires warmup_iterations=0 and measurement_iterations=1"
+    );
+    ensure!(
+        is_safe_relative_path(module),
+        "browser journey module must be a safe relative path"
+    );
+    validate_inherit_env(inherit_env)
+}
+
+fn validate_inherit_env(inherit_env: &[String]) -> Result<()> {
     for name in inherit_env {
         ensure!(
             !name.is_empty(),
@@ -191,8 +250,15 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
             "invalid inherited environment name: {name}"
         );
     }
-
     Ok(())
+}
+
+fn is_safe_relative_path(path: &Path) -> bool {
+    !path.as_os_str().is_empty()
+        && !path.is_absolute()
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
 }
 
 #[cfg(test)]
@@ -215,6 +281,24 @@ mod tests {
         }
     }
 
+    fn valid_browser_scenario() -> Scenario {
+        Scenario {
+            schema_version: SCENARIO_SCHEMA_V1.to_owned(),
+            id: "browser-test".to_owned(),
+            target: Target::BrowserJourney {
+                module: PathBuf::from("profiles/journey.mjs"),
+                working_directory: None,
+                inherit_env: Vec::new(),
+            },
+            run: RunConfig {
+                warmup_iterations: 0,
+                measurement_iterations: 1,
+                timeout_seconds: 30,
+            },
+            collectors: vec![Collector::BrowserChromium],
+        }
+    }
+
     #[test]
     fn accepts_valid_scenario() {
         assert!(validate_scenario(&valid_scenario()).is_ok());
@@ -231,6 +315,28 @@ mod tests {
     fn rejects_native_perf_without_process_collector() {
         let mut scenario = valid_scenario();
         scenario.collectors = vec![Collector::NativePerf];
+        assert!(validate_scenario(&scenario).is_err());
+    }
+
+    #[test]
+    fn accepts_browser_journey_with_browser_collector() {
+        assert!(validate_scenario(&valid_browser_scenario()).is_ok());
+    }
+
+    #[test]
+    fn rejects_browser_journey_with_process_collector() {
+        let mut scenario = valid_browser_scenario();
+        scenario.collectors = vec![Collector::Process];
+        assert!(validate_scenario(&scenario).is_err());
+    }
+
+    #[test]
+    fn rejects_browser_journey_module_escape() {
+        let mut scenario = valid_browser_scenario();
+        let Target::BrowserJourney { module, .. } = &mut scenario.target else {
+            unreachable!();
+        };
+        *module = PathBuf::from("../journey.mjs");
         assert!(validate_scenario(&scenario).is_err());
     }
 
@@ -259,9 +365,11 @@ mod tests {
     }
 
     #[test]
-    fn redacts_arguments_from_evidence() {
+    fn redacts_command_arguments_from_evidence() {
         let mut scenario = valid_scenario();
-        let Target::Command { args, .. } = &mut scenario.target;
+        let Target::Command { args, .. } = &mut scenario.target else {
+            unreachable!();
+        };
         args.push("secret-value".to_owned());
         let normalized = serde_json::to_vec(&scenario).expect("serialize scenario");
         let loaded = LoadedScenario {
