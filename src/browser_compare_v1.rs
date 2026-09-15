@@ -9,8 +9,7 @@ use crate::bundle::validate_bundle;
 use crate::chromium_trace::ChromiumTraceSummary;
 use crate::contract::{BundleManifest, SourceIdentity};
 
-pub const BROWSER_COMPARABILITY_SCHEMA_V1: &str =
-    "runtime-profiler/browser-comparability/v1";
+pub const BROWSER_COMPARABILITY_SCHEMA_V1: &str = "runtime-profiler/browser-comparability/v1";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -134,7 +133,9 @@ fn assess_recorded_identity(
         (Some(reference), Some(candidate)) => {
             compare_runtime_identity(reference, candidate, &mut mismatches, &mut missing)
         }
-        _ => missing.push("browser runtime evidence is missing from one or both bundles".to_owned()),
+        _ => {
+            missing.push("browser runtime evidence is missing from one or both bundles".to_owned())
+        }
     }
 
     match (reference_summary, candidate_summary) {

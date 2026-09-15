@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
 
+pub mod browser_chromium;
 #[path = "browser_compare_v1.rs"]
 pub mod browser_compare;
-pub mod browser_chromium;
 pub mod bundle;
 pub mod capture;
 pub mod chromium_trace;
