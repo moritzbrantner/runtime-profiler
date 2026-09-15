@@ -10,9 +10,8 @@ use serde::Serialize;
 
 use crate::browser_chromium::{
     BROWSER_RUNTIME_ARTIFACT, BROWSER_RUNTIME_MEDIA_TYPE, BROWSER_RUNTIME_SCHEMA_V1,
-    BrowserRuntimeDocument, COLLECTOR_ID as BROWSER_CHROMIUM_COLLECTOR_ID, RAW_TRACE_ARTIFACT,
-    RAW_TRACE_MEDIA_TYPE, TRACE_SUMMARY_ARTIFACT, TRACE_SUMMARY_MEDIA_TYPE,
-    capture_browser_chromium, validate_runtime_metadata,
+    BrowserRuntimeDocument, RAW_TRACE_ARTIFACT, RAW_TRACE_MEDIA_TYPE, TRACE_SUMMARY_ARTIFACT,
+    TRACE_SUMMARY_MEDIA_TYPE, capture_browser_chromium, validate_runtime_metadata,
 };
 use crate::capture::{capture_metrics, ensure_not_interrupted};
 use crate::chromium_trace::{CHROMIUM_TRACE_SUMMARY_SCHEMA_V1, ChromiumTraceSummary};
