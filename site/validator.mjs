@@ -1,11 +1,23 @@
-const EXPECTED_DOCUMENT_ARTIFACTS = new Map([
+const REQUIRED_DOCUMENT_ARTIFACTS = new Map([
   ["scenario.json", "runtime-profiler/scenario-evidence/v1"],
   ["environment.json", "runtime-profiler/environment/v1"],
   ["metrics.json", "runtime-profiler/metrics/v1"],
   ["hotspots.json", "runtime-profiler/hotspots/v1"],
   ["agent-guidance.json", "runtime-profiler/agent-guidance/v1"],
 ]);
-const OPTIONAL_ARTIFACTS = new Set(["native-perf-report.tsv"]);
+const OPTIONAL_DOCUMENT_ARTIFACTS = new Map([
+  ["chromium-trace-summary.json", "runtime-profiler/chromium-trace-summary/v1"],
+  ["browser-runtime.json", "runtime-profiler/browser-runtime/v1"],
+]);
+const DOCUMENT_ARTIFACTS = new Map([
+  ...REQUIRED_DOCUMENT_ARTIFACTS,
+  ...OPTIONAL_DOCUMENT_ARTIFACTS,
+]);
+const OPTIONAL_ARTIFACTS = new Set([
+  "native-perf-report.tsv",
+  "chromium-trace.json",
+  ...OPTIONAL_DOCUMENT_ARTIFACTS.keys(),
+]);
 
 const MANIFEST_SCHEMA = "runtime-profiler/bundle-manifest/v1";
 const FINGERPRINT_SCHEMAS = new Set([
@@ -39,7 +51,7 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
   }
 
   const declaredPaths = new Set((manifest.files ?? []).map((artifact) => artifact.path));
-  const requiredPaths = new Set(EXPECTED_DOCUMENT_ARTIFACTS.keys());
+  const requiredPaths = new Set(REQUIRED_DOCUMENT_ARTIFACTS.keys());
   const allowedPaths = new Set([...requiredPaths, ...OPTIONAL_ARTIFACTS]);
   if (![...requiredPaths].every((path) => declaredPaths.has(path))) {
     diagnostics.push("manifest is missing one or more required v1 artifacts");
@@ -81,7 +93,7 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
 
     verifiedFiles += 1;
     status.verified = true;
-    if (!EXPECTED_DOCUMENT_ARTIFACTS.has(artifact.path)) {
+    if (!DOCUMENT_ARTIFACTS.has(artifact.path)) {
       continue;
     }
     try {
@@ -117,6 +129,8 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
       environment: documents["environment.json"] ?? null,
       metrics,
       hotspots: documents["hotspots.json"] ?? null,
+      chromium_trace_summary: documents["chromium-trace-summary.json"] ?? null,
+      browser_runtime: documents["browser-runtime.json"] ?? null,
       agent_guidance: guidance,
     },
     limitations: [
@@ -128,7 +142,7 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
 }
 
 export function validateDocuments(manifest, documents, diagnostics = []) {
-  for (const [path, expectedSchema] of EXPECTED_DOCUMENT_ARTIFACTS) {
+  for (const [path, expectedSchema] of DOCUMENT_ARTIFACTS) {
     const document = documents[path];
     if (!document) continue;
     if (document.schema_version !== expectedSchema) {
@@ -172,13 +186,16 @@ export function validateDocuments(manifest, documents, diagnostics = []) {
     diagnostics.push("agent guidance identity is incompatible with manifest");
   }
 
-  const hotspots = documents["hotspots.json"];
+  validateNativePerf(manifest, scenario, documents["hotspots.json"], diagnostics);
+  validateBrowserJourney(manifest, scenario, metrics, documents, diagnostics);
+  return diagnostics;
+}
+
+function validateNativePerf(manifest, scenario, hotspots, diagnostics) {
   const nativeRequested = Array.isArray(scenario?.collectors)
     ? scenario.collectors.includes("native-perf")
     : false;
-  const rawPerfPresent = Array.isArray(manifest.files)
-    ? manifest.files.some((artifact) => artifact.path === "native-perf-report.tsv")
-    : false;
+  const rawPerfPresent = hasArtifact(manifest, "native-perf-report.tsv");
   if (nativeRequested) {
     if (
       hotspots?.status !== "collected" ||
@@ -216,14 +233,59 @@ export function validateDocuments(manifest, documents, diagnostics = []) {
     }
   } else {
     if (rawPerfPresent) {
-      diagnostics.push("process-only scenario unexpectedly contains native-perf raw evidence");
+      diagnostics.push("non-native scenario unexpectedly contains native-perf raw evidence");
     }
     if (hotspots?.status === "collected" || hotspots?.collector) {
-      diagnostics.push("process-only scenario unexpectedly claims collected hotspot evidence");
+      diagnostics.push("non-native scenario unexpectedly claims collected native hotspot evidence");
     }
   }
+}
 
-  return diagnostics;
+function validateBrowserJourney(manifest, scenario, metrics, documents, diagnostics) {
+  const browserRequested = Array.isArray(scenario?.collectors)
+    ? scenario.collectors.includes("browser-chromium")
+    : false;
+  const browserPaths = ["chromium-trace.json", "chromium-trace-summary.json", "browser-runtime.json"];
+  const browserPresence = browserPaths.map((path) => hasArtifact(manifest, path));
+
+  if (browserRequested) {
+    if (scenario?.target?.target_type !== "browser-journey") {
+      diagnostics.push("browser-chromium collector requires browser-journey evidence");
+    }
+    if (!browserPresence.every(Boolean)) {
+      diagnostics.push("browser journey is missing Chromium trace evidence artifacts");
+      return;
+    }
+    if ((metrics?.metrics?.length ?? 0) !== 0 || (metrics?.samples?.length ?? 0) !== 0) {
+      diagnostics.push(
+        "browser journey must not relabel Playwright driver process measurements as application metrics",
+      );
+    }
+    const runtime = documents["browser-runtime.json"];
+    if (
+      !runtime?.adapter_version ||
+      !runtime?.node_version ||
+      !runtime?.playwright_version ||
+      runtime?.browser_name !== "chromium" ||
+      !runtime?.browser_version ||
+      !Number.isInteger(runtime?.viewport?.width) ||
+      runtime.viewport.width <= 0 ||
+      !Number.isInteger(runtime?.viewport?.height) ||
+      runtime.viewport.height <= 0 ||
+      !Array.isArray(runtime?.trace_categories) ||
+      runtime.trace_categories.length === 0
+    ) {
+      diagnostics.push("browser runtime metadata is incomplete");
+    }
+  } else if (browserPresence.some(Boolean)) {
+    diagnostics.push("non-browser scenario unexpectedly contains browser trace evidence");
+  }
+}
+
+function hasArtifact(manifest, path) {
+  return Array.isArray(manifest.files)
+    ? manifest.files.some((artifact) => artifact.path === path)
+    : false;
 }
 
 export async function sha256(bytes, cryptoImpl = crypto) {
