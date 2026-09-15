@@ -165,10 +165,18 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         });
     }
     if raw_native_perf_report.is_some() {
-        files.push(artifact_entry(output, RAW_REPORT_ARTIFACT, RAW_REPORT_MEDIA_TYPE)?);
+        files.push(artifact_entry(
+            output,
+            RAW_REPORT_ARTIFACT,
+            RAW_REPORT_MEDIA_TYPE,
+        )?);
     }
     if browser_capture.is_some() {
-        files.push(artifact_entry(output, RAW_TRACE_ARTIFACT, RAW_TRACE_MEDIA_TYPE)?);
+        files.push(artifact_entry(
+            output,
+            RAW_TRACE_ARTIFACT,
+            RAW_TRACE_MEDIA_TYPE,
+        )?);
         files.push(artifact_entry(
             output,
             TRACE_SUMMARY_ARTIFACT,
@@ -424,19 +432,17 @@ fn validate_browser_artifacts(
         TRACE_SUMMARY_ARTIFACT,
         BROWSER_RUNTIME_ARTIFACT,
     ];
-    let browser_presence = browser_paths.map(|path| {
-        manifest
-            .files
-            .iter()
-            .any(|artifact| artifact.path == path)
-    });
+    let browser_presence =
+        browser_paths.map(|path| manifest.files.iter().any(|artifact| artifact.path == path));
 
     if browser_requested {
         if !matches!(scenario.target, TargetEvidence::BrowserJourney { .. }) {
-            diagnostics.push("browser-chromium collector requires browser-journey evidence".to_owned());
+            diagnostics
+                .push("browser-chromium collector requires browser-journey evidence".to_owned());
         }
         if !browser_presence.iter().all(|present| *present) {
-            diagnostics.push("browser journey is missing Chromium trace evidence artifacts".to_owned());
+            diagnostics
+                .push("browser journey is missing Chromium trace evidence artifacts".to_owned());
             return Ok(());
         }
         if !metrics.metrics.is_empty() || !metrics.samples.is_empty() {
@@ -463,7 +469,8 @@ fn validate_browser_artifacts(
             diagnostics.push(format!("invalid browser runtime metadata: {error}"));
         }
     } else if browser_presence.iter().any(|present| *present) {
-        diagnostics.push("non-browser scenario unexpectedly contains browser trace evidence".to_owned());
+        diagnostics
+            .push("non-browser scenario unexpectedly contains browser trace evidence".to_owned());
     }
     Ok(())
 }
