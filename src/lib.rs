@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+#[path = "browser_compare_v1.rs"]
+pub mod browser_compare;
 pub mod browser_chromium;
 pub mod bundle;
 pub mod capture;
@@ -13,6 +15,9 @@ pub mod scenario;
 pub mod score;
 
 pub use browser_chromium::{BrowserChromiumCapture, BrowserRuntimeDocument};
+pub use browser_compare::{
+    BrowserComparabilityReport, BrowserComparabilityStatus, compare_browser_bundles,
+};
 pub use bundle::{capture_bundle, render_agent_guidance, summarize_bundle, validate_bundle};
 pub use chromium_trace::{ChromiumTraceSummary, analyze_chromium_trace};
 pub use evidence::{AgentEvidenceReference, build_agent_evidence_reference};
