@@ -17,6 +17,9 @@
   "properties": {
     "schema_version": { "const": "runtime-profiler/browser-runtime/v1" },
     "adapter_version": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "adapter_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "normalizer_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "journey_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "node_version": { "type": "string", "minLength": 1, "maxLength": 512 },
     "playwright_version": { "type": "string", "minLength": 1, "maxLength": 512 },
     "browser_name": { "const": "chromium" },
