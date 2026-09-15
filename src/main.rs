@@ -193,8 +193,8 @@ fn detect() -> DetectionReport {
         runtime_profiler::native_perf::detect_native_perf(),
     );
     collectors.insert(
-        "browser-playwright".to_owned(),
-        planned_detection("bun", "planned Bun and Playwright journey adapter"),
+        runtime_profiler::browser_chromium::COLLECTOR_ID.to_owned(),
+        runtime_profiler::browser_chromium::detect_browser_chromium(),
     );
 
     DetectionReport {
