@@ -274,7 +274,10 @@ fn resolve_working_directory(
     configured.map(|path| resolve_path_from_scenario(loaded, path))
 }
 
-fn resolve_browser_working_directory(loaded: &LoadedScenario, configured: Option<&Path>) -> PathBuf {
+fn resolve_browser_working_directory(
+    loaded: &LoadedScenario,
+    configured: Option<&Path>,
+) -> PathBuf {
     configured.map_or_else(
         || {
             loaded
