@@ -74,7 +74,10 @@ pub fn detect_browser_chromium() -> Detection {
     match output {
         Ok(output) if output.status.success() => {
             let version = String::from_utf8(output.stdout).ok();
-            let version = version.as_deref().map(str::trim).filter(|value| !value.is_empty());
+            let version = version
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty());
             Detection {
                 available: true,
                 reason: "implemented: Node is available; Playwright and Chromium are verified in the consumer working directory at capture time".to_owned(),
@@ -133,7 +136,11 @@ pub fn capture_browser_chromium(loaded: &LoadedScenario) -> Result<BrowserChromi
 
     let working_directory = resolve_working_directory(loaded, working_directory.as_deref());
     let journey = working_directory.join(module);
-    ensure!(journey.is_file(), "browser journey module does not exist: {}", journey.display());
+    ensure!(
+        journey.is_file(),
+        "browser journey module does not exist: {}",
+        journey.display()
+    );
 
     let temp = create_temp_capture_directory()?;
     let driver = temp.path.join(DRIVER_FILE);
@@ -162,7 +169,8 @@ pub fn capture_browser_chromium(loaded: &LoadedScenario) -> Result<BrowserChromi
     let trace = fs::read(&trace).context("Playwright driver did not produce a Chromium trace")?;
     let summary = analyze_chromium_trace_bytes(&trace)
         .context("captured Chromium trace could not be normalized")?;
-    let metadata = fs::read(&metadata).context("Playwright driver did not produce runtime metadata")?;
+    let metadata =
+        fs::read(&metadata).context("Playwright driver did not produce runtime metadata")?;
     ensure!(
         metadata.len() <= MAX_RUNTIME_METADATA_BYTES,
         "browser runtime metadata exceeds the {} byte safety limit",
@@ -179,22 +187,34 @@ pub fn capture_browser_chromium(loaded: &LoadedScenario) -> Result<BrowserChromi
     })
 }
 
-fn validate_runtime_metadata(runtime: &BrowserRuntimeDocument) -> Result<()> {
+pub(crate) fn validate_runtime_metadata(runtime: &BrowserRuntimeDocument) -> Result<()> {
     ensure!(
         runtime.schema_version == BROWSER_RUNTIME_SCHEMA_V1,
         "unsupported browser runtime metadata schema: {}",
         runtime.schema_version
     );
-    ensure!(runtime.browser_name == "chromium", "browser adapter returned a non-Chromium browser");
-    ensure!(runtime.viewport.width > 0 && runtime.viewport.height > 0, "browser viewport must be positive");
-    ensure!(!runtime.trace_categories.is_empty(), "browser trace categories are missing");
+    ensure!(
+        runtime.browser_name == "chromium",
+        "browser adapter returned a non-Chromium browser"
+    );
+    ensure!(
+        runtime.viewport.width > 0 && runtime.viewport.height > 0,
+        "browser viewport must be positive"
+    );
+    ensure!(
+        !runtime.trace_categories.is_empty(),
+        "browser trace categories are missing"
+    );
     for value in [
         runtime.adapter_version.as_str(),
         runtime.node_version.as_str(),
         runtime.playwright_version.as_str(),
         runtime.browser_version.as_str(),
     ] {
-        ensure!(!value.is_empty() && value.len() <= 512, "browser runtime identity is missing or too large");
+        ensure!(
+            !value.is_empty() && value.len() <= 512,
+            "browser runtime identity is missing or too large"
+        );
     }
     Ok(())
 }
@@ -227,7 +247,10 @@ fn create_temp_capture_directory() -> Result<TempCaptureDirectory> {
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(error) => {
                 return Err(error).with_context(|| {
-                    format!("failed to create browser capture directory: {}", path.display())
+                    format!(
+                        "failed to create browser capture directory: {}",
+                        path.display()
+                    )
                 });
             }
         }
