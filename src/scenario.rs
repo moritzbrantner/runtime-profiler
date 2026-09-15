@@ -167,17 +167,23 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
             ..
         } => validate_command_target(scenario, program, args, inherit_env),
         Target::BrowserJourney {
-            module, inherit_env, ..
+            module,
+            inherit_env,
+            ..
         } => validate_browser_target(scenario, module, inherit_env),
     }
 }
 
 fn validate_scenario_id(id: &str) -> Result<()> {
     ensure!(!id.trim().is_empty(), "scenario id must not be empty");
-    ensure!(id.len() <= 128, "scenario id must be at most 128 characters");
     ensure!(
-        id.chars().all(|character| character.is_ascii_alphanumeric()
-            || matches!(character, '-' | '_' | '.')),
+        id.len() <= 128,
+        "scenario id must be at most 128 characters"
+    );
+    ensure!(
+        id.chars()
+            .all(|character| character.is_ascii_alphanumeric()
+                || matches!(character, '-' | '_' | '.')),
         "scenario id may contain only ASCII letters, digits, dash, underscore, and dot"
     );
     Ok(())
@@ -199,8 +205,14 @@ fn validate_command_target(
             "native-perf currently requires the process collector so runtime evidence remains comparable"
         );
     }
-    ensure!(!program.trim().is_empty(), "target program must not be empty");
-    ensure!(!program.contains('\0'), "target program contains a null byte");
+    ensure!(
+        !program.trim().is_empty(),
+        "target program must not be empty"
+    );
+    ensure!(
+        !program.contains('\0'),
+        "target program contains a null byte"
+    );
     if args.iter().any(|argument| argument.contains('\0')) {
         bail!("target argument contains a null byte");
     }
@@ -244,7 +256,9 @@ fn validate_inherit_env(inherit_env: &[String]) -> Result<()> {
 fn is_safe_relative_path(path: &Path) -> bool {
     !path.as_os_str().is_empty()
         && !path.is_absolute()
-        && path.components().all(|component| matches!(component, Component::Normal(_)))
+        && path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
 }
 
 #[cfg(test)]
