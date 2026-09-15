@@ -86,8 +86,9 @@ pub fn detect_browser_chromium() -> Detection {
         }
         _ => Detection {
             available: false,
-            reason: "browser-chromium requires Node and a consumer-provided Playwright installation"
-                .to_owned(),
+            reason:
+                "browser-chromium requires Node and a consumer-provided Playwright installation"
+                    .to_owned(),
             tool_version: None,
         },
     }
