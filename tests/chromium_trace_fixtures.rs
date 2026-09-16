@@ -17,15 +17,13 @@ fn representative_fixture_covers_renderer_nested_boundary_and_worker_semantics()
     assert_eq!(summary.main_thread.name, "CrRendererMain");
     assert_eq!(summary.long_task_count, 1);
     assert_eq!(summary.long_tasks[0].name, "RunTask");
-    assert!(
-        summary.hot_paths.iter().any(|path| {
-            path.frames.iter().map(|frame| frame.name.as_str()).eq([
-                "RunTask",
-                "FunctionCall",
-                "WebAssembly.execute",
-            ])
-        })
-    );
+    assert!(summary.hot_paths.iter().any(|path| {
+        path.frames.iter().map(|frame| frame.name.as_str()).eq([
+            "RunTask",
+            "FunctionCall",
+            "WebAssembly.execute",
+        ])
+    }));
     assert!(
         !summary
             .long_tasks
