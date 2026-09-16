@@ -120,6 +120,7 @@ export function buildResultModel(report) {
             longTasksTruncated: browserSummary.long_tasks_truncated === true,
             hotPathCount: valueOrNull(browserSummary.hot_path_count),
             hotPathsTruncated: browserSummary.hot_paths_truncated === true,
+            hotPathDepthTruncated: browserSummary.hot_path_depth_truncated === true,
             boundaryMarkerCount: valueOrNull(browserSummary.boundary_marker_count),
             boundaryMarkersTruncated: browserSummary.boundary_markers_truncated === true,
           },
