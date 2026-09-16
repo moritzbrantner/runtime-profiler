@@ -7,6 +7,7 @@ const status = document.querySelector("#status");
 const reportElement = document.querySelector("#report");
 const validationLink = document.querySelector("#validation-link");
 const manifestLink = document.querySelector("#manifest-link");
+let latestRun = 0;
 
 const initial = new URL(location.href).searchParams.get("manifest");
 if (initial) {
@@ -20,12 +21,14 @@ form.addEventListener("submit", (event) => {
 });
 
 async function run(rawManifestUrl) {
+  const runId = ++latestRun;
   reportElement.hidden = true;
   setStatus("Loading, hashing, and validating public evidence…", "normal");
 
   try {
     const manifestUrl = normalizeManifestUrl(rawManifestUrl);
     const report = await validateBundleUrl(manifestUrl);
+    if (runId !== latestRun) return;
     const model = buildResultModel(report);
     renderReport(model, manifestUrl);
     reportElement.hidden = false;
@@ -37,6 +40,7 @@ async function run(rawManifestUrl) {
       model.valid ? "ok" : "error",
     );
   } catch (error) {
+    if (runId !== latestRun) return;
     setStatus(error instanceof Error ? error.message : String(error), "error");
   }
 }
@@ -171,8 +175,14 @@ function renderBrowser(model) {
   const viewport = runtime.viewport
     ? `${runtime.viewport.width}×${runtime.viewport.height}`
     : null;
-  document.querySelector("#browser-note").textContent =
-    "Normalized renderer-main evidence. Raw Chromium trace events remain in the immutable bundle.";
+  const truncated =
+    summary.longTasksTruncated ||
+    summary.hotPathsTruncated ||
+    summary.hotPathDepthTruncated ||
+    summary.boundaryMarkersTruncated;
+  document.querySelector("#browser-note").textContent = truncated
+    ? "Normalized renderer-main evidence. One or more bounded views are truncated; the indicators below identify which evidence is partial. Raw Chromium trace events remain in the immutable bundle."
+    : "Normalized renderer-main evidence. Raw Chromium trace events remain in the immutable bundle.";
   renderInlineDetails(document.querySelector("#browser-details"), [
     ["browser", [runtime.browser_name, runtime.browser_version].filter(Boolean).join(" ") || null],
     ["viewport", viewport],
@@ -182,8 +192,12 @@ function renderBrowser(model) {
     ["long tasks", summary.longTaskCount],
     ["long task time", formatUs(summary.longTaskTotalDurationUs)],
     ["longest task", formatUs(summary.longestTaskUs)],
+    ["long tasks truncated", summary.longTasksTruncated],
     ["hot paths", summary.hotPathCount],
+    ["hot paths truncated", summary.hotPathsTruncated],
+    ["hot-path depth truncated", summary.hotPathDepthTruncated],
     ["boundaries", summary.boundaryMarkerCount],
+    ["boundaries truncated", summary.boundaryMarkersTruncated],
   ]);
 
   renderTable(
