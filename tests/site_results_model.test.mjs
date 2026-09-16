@@ -101,7 +101,7 @@ test("result explorer projects process and native evidence without inventing pol
   assert.equal(model.browserProfile, null);
 });
 
-test("result explorer projects bounded Chromium evidence", () => {
+test("result explorer projects bounded Chromium evidence and truncation", () => {
   const model = buildResultModel({
     valid: true,
     evidence: {
@@ -118,7 +118,7 @@ test("result explorer projects bounded Chromium evidence", () => {
         long_task_count: 1,
         long_task_total_duration_us: 75_000,
         longest_task_us: 75_000,
-        long_tasks_truncated: false,
+        long_tasks_truncated: true,
         long_tasks: [
           {
             name: "RunTask",
@@ -130,7 +130,8 @@ test("result explorer projects bounded Chromium evidence", () => {
           },
         ],
         hot_path_count: 1,
-        hot_paths_truncated: false,
+        hot_paths_truncated: true,
+        hot_path_depth_truncated: true,
         hot_paths: [
           {
             frames: [{ name: "RunTask" }, { name: "app::tick" }],
@@ -145,7 +146,7 @@ test("result explorer projects bounded Chromium evidence", () => {
           { runtime_kind: "wasm", inclusive_duration_us: 50_000, event_count: 2 },
         ],
         boundary_marker_count: 1,
-        boundary_markers_truncated: false,
+        boundary_markers_truncated: true,
         boundary_markers: [
           {
             direction: "js-to-wasm",
@@ -167,6 +168,10 @@ test("result explorer projects bounded Chromium evidence", () => {
   });
 
   assert.equal(model.browserProfile.summary.longTaskCount, 1);
+  assert.equal(model.browserProfile.summary.longTasksTruncated, true);
+  assert.equal(model.browserProfile.summary.hotPathsTruncated, true);
+  assert.equal(model.browserProfile.summary.hotPathDepthTruncated, true);
+  assert.equal(model.browserProfile.summary.boundaryMarkersTruncated, true);
   assert.equal(model.browserProfile.hotPaths[0].frames, "RunTask › app::tick");
   assert.equal(model.browserProfile.runtimeAttribution[0].runtimeKind, "wasm");
   assert.equal(model.browserProfile.boundaryMarkers[0].direction, "js-to-wasm");
