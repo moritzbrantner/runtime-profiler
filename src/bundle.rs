@@ -665,7 +665,10 @@ fn bounded_guidance_label(value: &str) -> String {
     let mut chars = value
         .chars()
         .map(|ch| if ch.is_control() || ch == '`' { ' ' } else { ch });
-    let mut result: String = chars.by_ref().take(MAX_BROWSER_GUIDANCE_LABEL_CHARS).collect();
+    let mut result: String = chars
+        .by_ref()
+        .take(MAX_BROWSER_GUIDANCE_LABEL_CHARS)
+        .collect();
     if chars.next().is_some() {
         result.push('…');
     }
@@ -809,7 +812,7 @@ mod tests {
             long_task_total_duration_us: 400_000,
             longest_task_us: Some(130_000),
             long_tasks_truncated: false,
-            long_tasks: (0..4)
+            long_tasks: (0_u64..4)
                 .map(|index| ChromiumLongTask {
                     id: format!("long-{index}"),
                     name: if index == 0 {
@@ -827,7 +830,7 @@ mod tests {
             hot_path_count: 4,
             hot_paths_truncated: false,
             hot_path_depth_truncated: false,
-            hot_paths: (0..4)
+            hot_paths: (0_u64..4)
                 .map(|index| ChromiumHotPath {
                     id: format!("hot-{index}"),
                     frames: vec![ChromiumHotPathFrame {
@@ -844,7 +847,7 @@ mod tests {
             runtime_attribution: Vec::new(),
             boundary_marker_count: 4,
             boundary_markers_truncated: false,
-            boundary_markers: (0..4)
+            boundary_markers: (0_u64..4)
                 .map(|index| ChromiumBoundaryMarker {
                     id: format!("boundary-{index}"),
                     direction: "js-to-wasm".to_owned(),
@@ -970,20 +973,44 @@ mod tests {
                 .count(),
             MAX_BROWSER_GUIDANCE_PER_KIND
         );
-        assert!(guidance.observations.iter().all(|observation| {
-            observation.evidence_ref.starts_with(TRACE_SUMMARY_ARTIFACT)
-        }));
-        assert!(guidance.observations.iter().all(|observation| {
-            !observation.summary.contains('\n') && !observation.summary.contains('`')
-        }));
+        assert!(
+            guidance
+                .observations
+                .iter()
+                .all(|observation| observation.evidence_ref.starts_with(TRACE_SUMMARY_ARTIFACT))
+        );
+        assert!(
+            guidance
+                .observations
+                .iter()
+                .all(|observation| !observation.summary.contains('\n'))
+        );
+        assert!(
+            guidance
+                .observations
+                .iter()
+                .all(|observation| !observation.summary.contains("`untrusted`"))
+        );
         assert!(
             guidance
                 .observations
                 .iter()
                 .any(|observation| observation.summary.contains("instrumented-section duration"))
         );
-        assert!(guidance.evidence_refs.contains(&TRACE_SUMMARY_ARTIFACT.to_owned()));
-        assert!(guidance.evidence_refs.contains(&BROWSER_RUNTIME_ARTIFACT.to_owned()));
-        assert!(!guidance.evidence_refs.contains(&RAW_TRACE_ARTIFACT.to_owned()));
+        assert!(
+            guidance
+                .evidence_refs
+                .contains(&TRACE_SUMMARY_ARTIFACT.to_owned())
+        );
+        assert!(
+            guidance
+                .evidence_refs
+                .contains(&BROWSER_RUNTIME_ARTIFACT.to_owned())
+        );
+        assert!(
+            !guidance
+                .evidence_refs
+                .contains(&RAW_TRACE_ARTIFACT.to_owned())
+        );
     }
 }
