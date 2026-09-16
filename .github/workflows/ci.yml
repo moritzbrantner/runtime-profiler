@@ -51,7 +51,14 @@ jobs:
         run: python3 scripts/check_contracts.py
 
       - name: Test Pages and score-history JavaScript
-        run: node --test tests/*.test.mjs
+        run: |
+          node --check site/app.js
+          node --check site/validator.mjs
+          node --check site/score/app.js
+          node --check site/score/model.js
+          node --check site/results/app.js
+          node --check site/results/model.js
+          node --test tests/*.test.mjs
 
       - name: Check formatting
         run: cargo fmt --check
