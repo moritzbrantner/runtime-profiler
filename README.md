@@ -58,6 +58,18 @@ The `0.1` foundation supports repeatable command scenarios and records:
 - optional `agent.evidence/v1` references for validated bundles crossing a component boundary;
 - descriptive reference-relative scoring for strictly comparable validated bundles.
 
+The browser foundation also supports repository-declared Playwright Chromium
+journeys. A browser capture records an immutable raw trace plus bounded
+normalized evidence for renderer-main long tasks, hot paths, runtime
+attribution, and explicit `runtime-profiler:js-to-wasm:*` / 
+`runtime-profiler:wasm-to-js:*` User Timing measures. New captures fingerprint
+the journey module, embedded Playwright driver, and Chromium trace normalizer,
+and `compare-browser` verifies strict browser identity before reporting only
+`comparable`, `incomparable`, or `insufficient-evidence`. Browser guidance is
+derived from bounded normalized summaries; raw trace events are not copied into
+agent prompts. Lighthouse, React render-budget ingestion, Expo/Tauri adapters,
+and flagship consumer dogfooding remain roadmap work.
+
 Linux resident memory is sampled from `VmRSS`; `process.max_observed_rss` is the
 largest sampled value and is deliberately not presented as an exact OS peak.
 The v1 `process.max_rss` identifier remains as a compatibility alias with
@@ -106,6 +118,16 @@ cargo run -- score \
   --json
 ```
 
+For browser-journey bundles, prove browser/runtime/workload identity before
+interpreting the two captures together:
+
+```bash
+cargo run -- compare-browser \
+  --reference .runtime-profiler/reference \
+  --candidate .runtime-profiler/candidate \
+  --json
+```
+
 The first capture creates an immutable directory. Choose a new output directory
 for every run; the CLI refuses to overwrite an existing one.
 
@@ -141,6 +163,12 @@ bundle/
 └── agent-guidance.json
 ```
 
+Browser-journey bundles additionally contain integrity-checked
+`chromium-trace.json`, `chromium-trace-summary.json`, and
+`browser-runtime.json` artifacts. The raw trace remains evidence storage; the
+normalized summary is the bounded surface used for browser guidance and strict
+comparison identity.
+
 The native bundle is the authoritative profiler artifact. When another
 component needs a neutral reference, `evidence-reference` first validates the
 bundle and then emits `agent.evidence/v1` with:
@@ -160,7 +188,11 @@ CLI and agent output remains bounded.
 The pinned external contract revision is documented in [`contracts/README.md`](contracts/README.md).
 
 See [Architecture](docs/architecture.md), [Runtime scoring](docs/scoring.md),
-[Moonlight contract](docs/moonlight.md), and the [Roadmap](ROADMAP.md) for the planned collector adapters.
+[Browser comparability](docs/browser-comparability.md),
+[Browser agent guidance](docs/browser-agent-guidance.md),
+[JS/WASM boundary markers](docs/js-wasm-boundary-markers.md),
+[Moonlight contract](docs/moonlight.md), and the [Roadmap](ROADMAP.md) for the
+planned collector adapters.
 
 ## Development
 
