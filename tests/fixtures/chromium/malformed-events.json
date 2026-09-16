@@ -1,0 +1,26 @@
+{
+  "traceEvents": [
+    {
+      "ph": "M",
+      "name": "thread_name",
+      "pid": 3,
+      "tid": 30,
+      "args": { "name": "CrRendererMain" }
+    },
+    null,
+    true,
+    42,
+    "ignored",
+    [],
+    {},
+    {
+      "ph": "X",
+      "name": "NegativeDurationMustFailClosed",
+      "cat": "toplevel",
+      "pid": 3,
+      "tid": 30,
+      "ts": 0,
+      "dur": -1
+    }
+  ]
+}
