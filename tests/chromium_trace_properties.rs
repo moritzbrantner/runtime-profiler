@@ -121,8 +121,7 @@ fn event_and_duplicate_metadata_order_do_not_change_normalized_evidence() {
     reversed.reverse();
 
     let forward = serde_json::to_vec(&json!({"traceEvents": events})).expect("forward trace");
-    let reversed =
-        serde_json::to_vec(&json!({"traceEvents": reversed})).expect("reversed trace");
+    let reversed = serde_json::to_vec(&json!({"traceEvents": reversed})).expect("reversed trace");
 
     let forward = analyze_chromium_trace_bytes(&forward).expect("forward summary");
     let reversed = analyze_chromium_trace_bytes(&reversed).expect("reversed summary");
