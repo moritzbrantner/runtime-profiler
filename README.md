@@ -61,7 +61,7 @@ The `0.1` foundation supports repeatable command scenarios and records:
 The browser foundation also supports repository-declared Playwright Chromium
 journeys. A browser capture records an immutable raw trace plus bounded
 normalized evidence for renderer-main long tasks, hot paths, runtime
-attribution, and explicit `runtime-profiler:js-to-wasm:*` / 
+attribution, and explicit `runtime-profiler:js-to-wasm:*` /
 `runtime-profiler:wasm-to-js:*` User Timing measures. New captures fingerprint
 the journey module, embedded Playwright driver, and Chromium trace normalizer,
 and `compare-browser` verifies strict browser identity before reporting only
@@ -189,6 +189,7 @@ The pinned external contract revision is documented in [`contracts/README.md`](c
 
 See [Architecture](docs/architecture.md), [Runtime scoring](docs/scoring.md),
 [Browser comparability](docs/browser-comparability.md),
+[Browser hot-path identity](docs/browser-hot-path-identity.md),
 [Browser agent guidance](docs/browser-agent-guidance.md),
 [JS/WASM boundary markers](docs/js-wasm-boundary-markers.md),
 [Moonlight contract](docs/moonlight.md), and the [Roadmap](ROADMAP.md) for the

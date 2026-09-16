@@ -34,6 +34,14 @@ Strict comparison requires matching:
 
 Source Git revisions may differ because a reference and candidate are expected to represent different code revisions. A changed journey module is not treated as a candidate performance change: its digest changes and the bundles are `incomparable` because the workload changed.
 
+## Hot-path identity
+
+Normalized Chromium hot paths preserve ordered raw trace-event `(category, name)` frame pairs. Their deterministic ids are descriptive trace identity, not a profiler-defined semantic call-stack vocabulary.
+
+A hot-path id may be interpreted across a reference and candidate only after the strict comparison above has established the same Chromium version, trace categories, summary schema, and normalizer digest. Raw hot-path ids must not be compared across different Chromium versions, and an id change by itself is not a performance or semantic verdict.
+
+See [Browser hot-path identity](browser-hot-path-identity.md) for the full boundary and the conditions that would be required before introducing a versioned semantic frame vocabulary.
+
 ## Legacy browser bundles
 
 Browser bundles captured before journey, adapter, and normalizer digests were recorded remain valid immutable evidence. They are not silently upgraded to strict comparison evidence. `compare-browser` reports `insufficient-evidence` when those identity fields are absent.
