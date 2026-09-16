@@ -6,6 +6,12 @@
   "description": "Validate and inspect already captured public runtime-profiler evidence bundles without executing the workload.",
   "operations": [
     {
+      "id": "inspect-bundle-results",
+      "transport": "html",
+      "hrefTemplate": "https://moritzbrantner.github.io/runtime-profiler/results/?manifest={manifestUrl}",
+      "description": "Human-readable validated profiler report with run identity, metric distributions, samples, native hotspots, browser evidence, guidance, and artifact integrity."
+    },
+    {
       "id": "inspect-bundle",
       "transport": "html",
       "hrefTemplate": "https://moritzbrantner.github.io/runtime-profiler/?manifest={manifestUrl}",
@@ -41,6 +47,7 @@
   "limitations": [
     "GitHub Pages cannot capture or execute workloads.",
     "The browser validator covers the public v1 bundle contract and SHA-256 artifact integrity; native validation remains authoritative.",
+    "The visual result explorer is a projection of validated normalized bundle evidence, not a second source of measurements or policy.",
     "Reference-relative scoring requires native validation plus identical scenario and environment fingerprints; it does not define project regression policy.",
     "Repository history scores each main commit against its first parent on the same runner; this is adjacent-revision retention, not an absolute performance index.",
     "A source host that blocks browser CORS cannot be inspected remotely."
