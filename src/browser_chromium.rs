@@ -198,7 +198,7 @@ pub fn capture_browser_chromium(loaded: &LoadedScenario) -> Result<BrowserChromi
     runtime.adapter_digest = Some(prefixed_sha256(DRIVER_SOURCE.as_bytes()));
     runtime.normalizer_digest = Some(prefixed_sha256(TRACE_NORMALIZER_SOURCE.as_bytes()));
     runtime.journey_digest = Some(format!("sha256:{journey_digest_before}"));
-    validate_runtime_metadata(&runtime)?;
+    validate_current_runtime_metadata(&runtime)?;
 
     Ok(BrowserChromiumCapture {
         trace,
@@ -236,19 +236,39 @@ pub(crate) fn validate_runtime_metadata(runtime: &BrowserRuntimeDocument) -> Res
             "browser runtime identity is missing or too large"
         );
     }
-    for (label, digest) in [
+
+    let digests = [
         ("browser adapter digest", runtime.adapter_digest.as_deref()),
         (
             "Chromium trace normalizer digest",
             runtime.normalizer_digest.as_deref(),
         ),
         ("browser journey digest", runtime.journey_digest.as_deref()),
-    ] {
+    ];
+    if digests.iter().all(|(_, digest)| digest.is_none()) {
+        return Ok(());
+    }
+    ensure!(
+        digests.iter().all(|(_, digest)| digest.is_some()),
+        "browser comparison digests are only partially recorded"
+    );
+    for (label, digest) in digests {
         ensure!(
             digest.is_some_and(is_prefixed_sha256),
-            "{label} is missing or invalid"
+            "{label} is invalid"
         );
     }
+    Ok(())
+}
+
+fn validate_current_runtime_metadata(runtime: &BrowserRuntimeDocument) -> Result<()> {
+    validate_runtime_metadata(runtime)?;
+    ensure!(
+        runtime.adapter_digest.is_some()
+            && runtime.normalizer_digest.is_some()
+            && runtime.journey_digest.is_some(),
+        "browser comparison digests are required for new captures"
+    );
     Ok(())
 }
 
@@ -331,6 +351,16 @@ mod tests {
     #[test]
     fn validates_complete_runtime_metadata() {
         assert!(validate_runtime_metadata(&runtime()).is_ok());
+        assert!(validate_current_runtime_metadata(&runtime()).is_ok());
+    }
+
+    #[test]
+    fn validates_legacy_runtime_metadata_without_comparison_digests() {
+        let mut runtime = runtime();
+        runtime.adapter_digest = None;
+        runtime.normalizer_digest = None;
+        runtime.journey_digest = None;
+        assert!(validate_runtime_metadata(&runtime).is_ok());
     }
 
     #[test]
@@ -341,9 +371,25 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_comparison_digest() {
+    fn rejects_partially_recorded_comparison_digests() {
         let mut runtime = runtime();
         runtime.journey_digest = None;
         assert!(validate_runtime_metadata(&runtime).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_comparison_digest() {
+        let mut runtime = runtime();
+        runtime.adapter_digest = Some("sha256:not-a-digest".to_owned());
+        assert!(validate_runtime_metadata(&runtime).is_err());
+    }
+
+    #[test]
+    fn requires_comparison_digests_for_new_captures() {
+        let mut runtime = runtime();
+        runtime.adapter_digest = None;
+        runtime.normalizer_digest = None;
+        runtime.journey_digest = None;
+        assert!(validate_current_runtime_metadata(&runtime).is_err());
     }
 }
