@@ -662,9 +662,13 @@ fn summarize_metric(metric: &MetricSummary) -> String {
 }
 
 fn bounded_guidance_label(value: &str) -> String {
-    let mut chars = value
-        .chars()
-        .map(|ch| if ch.is_control() || ch == '`' { ' ' } else { ch });
+    let mut chars = value.chars().map(|ch| {
+        if ch.is_control() || ch == '`' {
+            ' '
+        } else {
+            ch
+        }
+    });
     let mut result: String = chars
         .by_ref()
         .take(MAX_BROWSER_GUIDANCE_LABEL_CHARS)
@@ -962,7 +966,11 @@ mod tests {
 
     #[test]
     fn browser_guidance_is_bounded_sanitized_and_normalized() {
-        let guidance = build_guidance(&empty_metrics(), &empty_hotspots(), Some(&browser_summary()));
+        let guidance = build_guidance(
+            &empty_metrics(),
+            &empty_hotspots(),
+            Some(&browser_summary()),
+        );
 
         assert_eq!(guidance.observations.len(), 9);
         assert_eq!(
@@ -991,12 +999,11 @@ mod tests {
                 .iter()
                 .all(|observation| !observation.summary.contains("`untrusted`"))
         );
-        assert!(
-            guidance
-                .observations
-                .iter()
-                .any(|observation| observation.summary.contains("instrumented-section duration"))
-        );
+        assert!(guidance.observations.iter().any(|observation| {
+            observation
+                .summary
+                .contains("instrumented-section duration")
+        }));
         assert!(
             guidance
                 .evidence_refs
