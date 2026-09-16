@@ -8,10 +8,11 @@ use clap::{Parser, Subcommand};
 use runtime_profiler::capture::install_cli_interruption_handlers;
 use runtime_profiler::contract::{Detection, DetectionReport, MetricsDocument};
 use runtime_profiler::{
-    ChromiumTraceSummary, HotspotComparabilityReport, HotspotComparabilityStatus,
-    RuntimeScoreDocument, analyze_chromium_trace, build_agent_evidence_reference, capture_bundle,
-    compare_hotspot_bundles, load_scenario, render_agent_guidance, score_bundles, summarize_bundle,
-    validate_bundle,
+    BrowserComparabilityReport, BrowserComparabilityStatus, ChromiumTraceSummary,
+    HotspotComparabilityReport, HotspotComparabilityStatus, RuntimeScoreDocument,
+    analyze_chromium_trace, build_agent_evidence_reference, capture_bundle,
+    compare_browser_bundles, compare_hotspot_bundles, load_scenario, render_agent_guidance,
+    score_bundles, summarize_bundle, validate_bundle,
 };
 
 #[derive(Debug, Parser)]
@@ -64,6 +65,15 @@ enum Commands {
     },
     /// Report whether two hotspot bundles have enough compatible identity to compare.
     CompareHotspots {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long)]
+        candidate: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Report whether two browser bundles have enough compatible identity to compare.
+    CompareBrowser {
         #[arg(long)]
         reference: PathBuf,
         #[arg(long)]
@@ -142,6 +152,18 @@ fn main() -> Result<()> {
                 print_json(&report);
             } else {
                 print_hotspot_comparability(&report);
+            }
+        }
+        Commands::CompareBrowser {
+            reference,
+            candidate,
+            json,
+        } => {
+            let report = compare_browser_bundles(&reference, &candidate)?;
+            if json {
+                print_json(&report);
+            } else {
+                print_browser_comparability(&report);
             }
         }
         Commands::AnalyzeChromiumTrace { trace, json } => {
@@ -283,6 +305,18 @@ fn print_hotspot_comparability(report: &HotspotComparabilityReport) {
         HotspotComparabilityStatus::InsufficientEvidence => "insufficient-evidence",
     };
     println!("Hotspot comparability: {status}");
+    for reason in &report.reasons {
+        println!("- {reason}");
+    }
+}
+
+fn print_browser_comparability(report: &BrowserComparabilityReport) {
+    let status = match report.status {
+        BrowserComparabilityStatus::Comparable => "comparable",
+        BrowserComparabilityStatus::Incomparable => "incomparable",
+        BrowserComparabilityStatus::InsufficientEvidence => "insufficient-evidence",
+    };
+    println!("Browser comparability: {status}");
     for reason in &report.reasons {
         println!("- {reason}");
     }

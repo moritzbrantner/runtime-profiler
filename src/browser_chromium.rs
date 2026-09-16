@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::capture::execute_prepared_command;
 use crate::chromium_trace::{ChromiumTraceSummary, analyze_chromium_trace_bytes};
 use crate::contract::{CollectorPlan, Detection, Target};
+use crate::digest::{sha256_bytes, sha256_file};
 use crate::scenario::LoadedScenario;
 
 pub const COLLECTOR_ID: &str = "browser-chromium";
@@ -23,6 +24,7 @@ pub const BROWSER_RUNTIME_MEDIA_TYPE: &str = "application/json";
 pub const BROWSER_RUNTIME_SCHEMA_V1: &str = "runtime-profiler/browser-runtime/v1";
 
 const DRIVER_SOURCE: &str = include_str!("../scripts/playwright-driver.mjs");
+const TRACE_NORMALIZER_SOURCE: &str = include_str!("chromium_trace.rs");
 const DRIVER_FILE: &str = "playwright-driver.mjs";
 const DRIVER_TRACE_FILE: &str = "trace.json";
 const DRIVER_METADATA_FILE: &str = "browser-runtime.json";
@@ -39,6 +41,12 @@ pub struct BrowserChromiumCapture {
 pub struct BrowserRuntimeDocument {
     pub schema_version: String,
     pub adapter_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub normalizer_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub journey_digest: Option<String>,
     pub node_version: String,
     pub playwright_version: String,
     pub browser_name: String,
@@ -142,6 +150,7 @@ pub fn capture_browser_chromium(loaded: &LoadedScenario) -> Result<BrowserChromi
         "browser journey module does not exist: {}",
         journey.display()
     );
+    let journey_digest_before = sha256_file(&journey)?;
 
     let temp = create_temp_capture_directory()?;
     let driver = temp.path.join(DRIVER_FILE);
@@ -177,9 +186,19 @@ pub fn capture_browser_chromium(loaded: &LoadedScenario) -> Result<BrowserChromi
         "browser runtime metadata exceeds the {} byte safety limit",
         MAX_RUNTIME_METADATA_BYTES
     );
-    let runtime: BrowserRuntimeDocument =
+    let mut runtime: BrowserRuntimeDocument =
         serde_json::from_slice(&metadata).context("browser runtime metadata is invalid")?;
-    validate_runtime_metadata(&runtime)?;
+
+    let journey_digest_after = sha256_file(&journey)?;
+    ensure!(
+        journey_digest_before == journey_digest_after,
+        "browser journey module changed during capture: {}",
+        journey.display()
+    );
+    runtime.adapter_digest = Some(prefixed_sha256(DRIVER_SOURCE.as_bytes()));
+    runtime.normalizer_digest = Some(prefixed_sha256(TRACE_NORMALIZER_SOURCE.as_bytes()));
+    runtime.journey_digest = Some(format!("sha256:{journey_digest_before}"));
+    validate_current_runtime_metadata(&runtime)?;
 
     Ok(BrowserChromiumCapture {
         trace,
@@ -217,7 +236,51 @@ pub(crate) fn validate_runtime_metadata(runtime: &BrowserRuntimeDocument) -> Res
             "browser runtime identity is missing or too large"
         );
     }
+
+    let digests = [
+        ("browser adapter digest", runtime.adapter_digest.as_deref()),
+        (
+            "Chromium trace normalizer digest",
+            runtime.normalizer_digest.as_deref(),
+        ),
+        ("browser journey digest", runtime.journey_digest.as_deref()),
+    ];
+    if digests.iter().all(|(_, digest)| digest.is_none()) {
+        return Ok(());
+    }
+    ensure!(
+        digests.iter().all(|(_, digest)| digest.is_some()),
+        "browser comparison digests are only partially recorded"
+    );
+    for (label, digest) in digests {
+        ensure!(digest.is_some_and(is_prefixed_sha256), "{label} is invalid");
+    }
     Ok(())
+}
+
+fn validate_current_runtime_metadata(runtime: &BrowserRuntimeDocument) -> Result<()> {
+    validate_runtime_metadata(runtime)?;
+    ensure!(
+        runtime.adapter_digest.is_some()
+            && runtime.normalizer_digest.is_some()
+            && runtime.journey_digest.is_some(),
+        "browser comparison digests are required for new captures"
+    );
+    Ok(())
+}
+
+fn prefixed_sha256(bytes: &[u8]) -> String {
+    format!("sha256:{}", sha256_bytes(bytes))
+}
+
+fn is_prefixed_sha256(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn resolve_working_directory(loaded: &LoadedScenario, configured: Option<&Path>) -> PathBuf {
@@ -263,11 +326,13 @@ fn create_temp_capture_directory() -> Result<TempCaptureDirectory> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn validates_complete_runtime_metadata() {
-        let runtime = BrowserRuntimeDocument {
+    fn runtime() -> BrowserRuntimeDocument {
+        BrowserRuntimeDocument {
             schema_version: BROWSER_RUNTIME_SCHEMA_V1.to_owned(),
             adapter_version: "runtime-profiler/playwright-driver/v1".to_owned(),
+            adapter_digest: Some(format!("sha256:{}", "a".repeat(64))),
+            normalizer_digest: Some(format!("sha256:{}", "b".repeat(64))),
+            journey_digest: Some(format!("sha256:{}", "c".repeat(64))),
             node_version: "v24.0.0".to_owned(),
             playwright_version: "1.58.0".to_owned(),
             browser_name: "chromium".to_owned(),
@@ -277,25 +342,51 @@ mod tests {
                 height: 720,
             },
             trace_categories: vec!["devtools.timeline".to_owned()],
-        };
+        }
+    }
+
+    #[test]
+    fn validates_complete_runtime_metadata() {
+        assert!(validate_runtime_metadata(&runtime()).is_ok());
+        assert!(validate_current_runtime_metadata(&runtime()).is_ok());
+    }
+
+    #[test]
+    fn validates_legacy_runtime_metadata_without_comparison_digests() {
+        let mut runtime = runtime();
+        runtime.adapter_digest = None;
+        runtime.normalizer_digest = None;
+        runtime.journey_digest = None;
         assert!(validate_runtime_metadata(&runtime).is_ok());
     }
 
     #[test]
     fn rejects_missing_runtime_identity() {
-        let runtime = BrowserRuntimeDocument {
-            schema_version: BROWSER_RUNTIME_SCHEMA_V1.to_owned(),
-            adapter_version: String::new(),
-            node_version: "v24.0.0".to_owned(),
-            playwright_version: "1.58.0".to_owned(),
-            browser_name: "chromium".to_owned(),
-            browser_version: "140.0.0".to_owned(),
-            viewport: BrowserViewport {
-                width: 1280,
-                height: 720,
-            },
-            trace_categories: vec!["devtools.timeline".to_owned()],
-        };
+        let mut runtime = runtime();
+        runtime.adapter_version = String::new();
         assert!(validate_runtime_metadata(&runtime).is_err());
+    }
+
+    #[test]
+    fn rejects_partially_recorded_comparison_digests() {
+        let mut runtime = runtime();
+        runtime.journey_digest = None;
+        assert!(validate_runtime_metadata(&runtime).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_comparison_digest() {
+        let mut runtime = runtime();
+        runtime.adapter_digest = Some("sha256:not-a-digest".to_owned());
+        assert!(validate_runtime_metadata(&runtime).is_err());
+    }
+
+    #[test]
+    fn requires_comparison_digests_for_new_captures() {
+        let mut runtime = runtime();
+        runtime.adapter_digest = None;
+        runtime.normalizer_digest = None;
+        runtime.journey_digest = None;
+        assert!(validate_current_runtime_metadata(&runtime).is_err());
     }
 }
