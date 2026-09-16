@@ -253,10 +253,7 @@ pub(crate) fn validate_runtime_metadata(runtime: &BrowserRuntimeDocument) -> Res
         "browser comparison digests are only partially recorded"
     );
     for (label, digest) in digests {
-        ensure!(
-            digest.is_some_and(is_prefixed_sha256),
-            "{label} is invalid"
-        );
+        ensure!(digest.is_some_and(is_prefixed_sha256), "{label} is invalid");
     }
     Ok(())
 }
