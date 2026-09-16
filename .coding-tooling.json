@@ -6,5 +6,13 @@
     "full": ["format:check", "lint", "build", "test:unit", "test:integration"]
   },
   "requiredCapabilities": ["format:check", "lint", "build", "test:unit"],
-  "optionalCapabilities": ["test:integration"]
+  "optionalCapabilities": ["test:integration"],
+  "merge": {
+    "authority": "hosted",
+    "requiredChecks": [
+      "verify",
+      "Deterministic Findings / Coding Tooling Validation",
+      "Coding Tooling Fast / Coding Tooling Validation"
+    ]
+  }
 }
