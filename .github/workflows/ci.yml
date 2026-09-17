@@ -26,7 +26,6 @@ jobs:
     with:
       operation: run
       tier: fast
-      install_mode: none
       report_path: .artifacts/coding-tooling/fast.json
 
   verify:
@@ -43,10 +42,7 @@ jobs:
           node-version: "24"
 
       - name: Install Pages dependencies
-        run: npm install --ignore-scripts --no-audit --no-fund
-
-      - name: Capture generated Pages lockfile
-        run: cat package-lock.json
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.98.0
