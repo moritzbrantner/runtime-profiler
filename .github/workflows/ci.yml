@@ -41,6 +41,9 @@ jobs:
         with:
           node-version: "24"
 
+      - name: Install Pages dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.98.0
         with:
@@ -55,16 +58,8 @@ jobs:
       - name: Check contracts
         run: python3 scripts/check_contracts.py
 
-      - name: Test and build Pages surfaces
-        run: |
-          node --check site/app.js
-          node --check site/validator.mjs
-          node --check site/score/app.js
-          node --check site/score/model.js
-          node --check site/results/app.js
-          node --check site/results/model.js
-          node --test tests/*.test.mjs
-          bash scripts/build_pages.sh
+      - name: Verify TypeScript Pages surfaces
+        run: npm run verify:pages
 
       - name: Check formatting
         run: cargo fmt --check

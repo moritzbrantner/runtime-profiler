@@ -1,12 +1,32 @@
 import { validateBundleUrl } from "../validator.mjs";
-import { buildResultModel, formatResultValue } from "./model.js";
+import {
+  buildResultModel,
+  formatResultValue,
+  type DetailRow,
+  type ResultModel,
+} from "./model.js";
 
-const form = document.querySelector("#manifest-form");
-const input = document.querySelector("#manifest");
-const status = document.querySelector("#status");
-const reportElement = document.querySelector("#report");
-const validationLink = document.querySelector("#validation-link");
-const manifestLink = document.querySelector("#manifest-link");
+type TableRow = Record<string, any>;
+interface TableColumn {
+  label: string;
+  numeric?: boolean;
+  className?: string;
+  status?: string;
+  render: (row: TableRow) => string;
+}
+
+function mustElement<T extends Element>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Missing required element: ${selector}`);
+  return element;
+}
+
+const form = mustElement<HTMLFormElement>("#manifest-form");
+const input = mustElement<HTMLInputElement>("#manifest");
+const status = mustElement<HTMLElement>("#status");
+const reportElement = mustElement<HTMLElement>("#report");
+const validationLink = mustElement<HTMLAnchorElement>("#validation-link");
+const manifestLink = mustElement<HTMLAnchorElement>("#manifest-link");
 let latestRun = 0;
 
 const initial = new URL(location.href).searchParams.get("manifest");
@@ -20,7 +40,7 @@ form.addEventListener("submit", (event) => {
   void run(input.value);
 });
 
-async function run(rawManifestUrl) {
+async function run(rawManifestUrl: string): Promise<void> {
   const runId = ++latestRun;
   reportElement.hidden = true;
   setStatus("Loading, hashing, and validating public evidence…", "normal");
@@ -39,13 +59,13 @@ async function run(rawManifestUrl) {
         : `Evidence rendered with ${model.diagnostics.length} validation diagnostic${model.diagnostics.length === 1 ? "" : "s"}; treat the bundle as invalid.`,
       model.valid ? "ok" : "error",
     );
-  } catch (error) {
+  } catch (error: unknown) {
     if (runId !== latestRun) return;
     setStatus(error instanceof Error ? error.message : String(error), "error");
   }
 }
 
-function normalizeManifestUrl(value) {
+function normalizeManifestUrl(value: string): string {
   const url = new URL(value);
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("Manifest URL must use HTTP or HTTPS.");
@@ -53,24 +73,24 @@ function normalizeManifestUrl(value) {
   return url.href;
 }
 
-function setStatus(message, state) {
+function setStatus(message: string, state: "normal" | "ok" | "error"): void {
   status.textContent = message;
   status.dataset.state = state;
 }
 
-function renderReport(model, manifestUrl) {
+function renderReport(model: ResultModel, manifestUrl: string): void {
   validationLink.href = `../validate.json/?manifest=${encodeURIComponent(manifestUrl)}`;
   manifestLink.href = manifestUrl;
 
-  renderDetails(document.querySelector("#identity-details"), model.identity, (row) =>
+  renderDetails(mustElement("#identity-details"), model.identity, (row) =>
     row.label === "Captured"
       ? formatResultValue(row.value, { timestamp: true })
       : formatResultValue(row.value),
   );
-  renderDetails(document.querySelector("#environment-details"), model.environment);
+  renderDetails(mustElement("#environment-details"), model.environment);
 
   renderTable(
-    document.querySelector("#measurements-table"),
+    mustElement("#measurements-table"),
     [
       textColumn("Metric", "id", "code"),
       textColumn("Direction", "preferredDirection"),
@@ -86,7 +106,7 @@ function renderReport(model, manifestUrl) {
   );
 
   renderTable(
-    document.querySelector("#samples-table"),
+    mustElement("#samples-table"),
     [
       numericColumn("Iteration", (row) => formatResultValue(row.iteration)),
       numericColumn("Duration", (row) => formatResultValue(row.durationMs, { unit: "ms" })),
@@ -105,7 +125,7 @@ function renderReport(model, manifestUrl) {
   renderDiagnostics(model.diagnostics);
 
   renderTable(
-    document.querySelector("#artifacts-table"),
+    mustElement("#artifacts-table"),
     [
       textColumn("Artifact", "path", "code"),
       textColumn("Media type", "mediaType"),
@@ -113,7 +133,7 @@ function renderReport(model, manifestUrl) {
       textColumn("SHA-256", "sha256", "code"),
       {
         label: "Diagnostics",
-        render: (row) => row.diagnostics.join("; ") || "—",
+        render: (row) => (row.diagnostics as string[]).join("; ") || "—",
       },
     ],
     model.artifacts,
@@ -121,8 +141,8 @@ function renderReport(model, manifestUrl) {
   );
 }
 
-function renderNative(model) {
-  const section = document.querySelector("#native-profile");
+function renderNative(model: ResultModel): void {
+  const section = mustElement<HTMLElement>("#native-profile");
   const collectors = model.identity.find((row) => row.label === "Collectors")?.value ?? "";
   const visible =
     String(collectors).split(", ").includes("native-perf") ||
@@ -132,11 +152,11 @@ function renderNative(model) {
   if (!visible) return;
 
   const profile = model.nativeProfile;
-  document.querySelector("#native-note").textContent =
+  mustElement<HTMLElement>("#native-note").textContent =
     profile.status === "collected"
       ? "Bounded source-level evidence emitted by the native collector."
       : profile.reason ?? "Native profiling evidence was not collected.";
-  renderInlineDetails(document.querySelector("#native-details"), [
+  renderInlineDetails(mustElement("#native-details"), [
     ["collector", profile.collector],
     ["event", profile.event],
     ["metric", profile.metric],
@@ -145,14 +165,14 @@ function renderNative(model) {
     ["truncated", profile.truncated],
   ]);
   renderTable(
-    document.querySelector("#hotspots-table"),
+    mustElement("#hotspots-table"),
     [
       textColumn("Symbol", "symbol", "code"),
       {
         label: "Source",
         className: "code",
         render: (row) =>
-          row.sourceFile ? `${row.sourceFile}${row.line === null ? "" : `:${row.line}`}` : "—",
+          row.sourceFile ? `${String(row.sourceFile)}${row.line === null ? "" : `:${String(row.line)}`}` : "—",
       },
       numericColumn("Weight", (row) => formatResultValue(row.weight)),
       numericColumn("Samples", (row) => formatResultValue(row.samples)),
@@ -164,8 +184,8 @@ function renderNative(model) {
   );
 }
 
-function renderBrowser(model) {
-  const section = document.querySelector("#browser-profile");
+function renderBrowser(model: ResultModel): void {
+  const section = mustElement<HTMLElement>("#browser-profile");
   const profile = model.browserProfile;
   section.hidden = profile === null;
   if (!profile) return;
@@ -173,17 +193,17 @@ function renderBrowser(model) {
   const runtime = profile.runtime ?? {};
   const summary = profile.summary;
   const viewport = runtime.viewport
-    ? `${runtime.viewport.width}×${runtime.viewport.height}`
+    ? `${String(runtime.viewport.width)}×${String(runtime.viewport.height)}`
     : null;
   const truncated =
     summary.longTasksTruncated ||
     summary.hotPathsTruncated ||
     summary.hotPathDepthTruncated ||
     summary.boundaryMarkersTruncated;
-  document.querySelector("#browser-note").textContent = truncated
+  mustElement<HTMLElement>("#browser-note").textContent = truncated
     ? "Normalized renderer-main evidence. One or more bounded views are truncated; the indicators below identify which evidence is partial. Raw Chromium trace events remain in the immutable bundle."
     : "Normalized renderer-main evidence. Raw Chromium trace events remain in the immutable bundle.";
-  renderInlineDetails(document.querySelector("#browser-details"), [
+  renderInlineDetails(mustElement("#browser-details"), [
     ["browser", [runtime.browser_name, runtime.browser_version].filter(Boolean).join(" ") || null],
     ["viewport", viewport],
     ["trace events", summary.traceEventCount],
@@ -201,10 +221,10 @@ function renderBrowser(model) {
   ]);
 
   renderTable(
-    document.querySelector("#runtime-table"),
+    mustElement("#runtime-table"),
     [
       textColumn("Runtime", "runtimeKind"),
-      numericColumn("Inclusive time", (row) => formatUs(row.inclusiveDurationUs)),
+      numericColumn("Inclusive time", (row) => formatUs(row.inclusiveDurationUs as number | null)),
       numericColumn("Events", (row) => formatResultValue(row.eventCount)),
     ],
     profile.runtimeAttribution,
@@ -212,12 +232,12 @@ function renderBrowser(model) {
   );
 
   renderTable(
-    document.querySelector("#long-tasks-table"),
+    mustElement("#long-tasks-table"),
     [
       textColumn("Task", "name", "code"),
       textColumn("Runtime", "runtimeKind"),
-      numericColumn("Start", (row) => formatUs(row.startUs)),
-      numericColumn("Duration", (row) => formatUs(row.durationUs)),
+      numericColumn("Start", (row) => formatUs(row.startUs as number | null)),
+      numericColumn("Duration", (row) => formatUs(row.durationUs as number | null)),
       textColumn("Evidence", "evidenceRef", "code"),
     ],
     profile.longTasks,
@@ -225,12 +245,12 @@ function renderBrowser(model) {
   );
 
   renderTable(
-    document.querySelector("#browser-hotpaths-table"),
+    mustElement("#browser-hotpaths-table"),
     [
       textColumn("Path", "frames", "code"),
       textColumn("Leaf runtime", "runtimeKind"),
-      numericColumn("Total time", (row) => formatUs(row.totalDurationUs)),
-      numericColumn("Max", (row) => formatUs(row.maxDurationUs)),
+      numericColumn("Total time", (row) => formatUs(row.totalDurationUs as number | null)),
+      numericColumn("Max", (row) => formatUs(row.maxDurationUs as number | null)),
       numericColumn("Occurrences", (row) => formatResultValue(row.occurrences)),
       textColumn("Evidence", "evidenceRef", "code"),
     ],
@@ -239,12 +259,12 @@ function renderBrowser(model) {
   );
 
   renderTable(
-    document.querySelector("#boundaries-table"),
+    mustElement("#boundaries-table"),
     [
       textColumn("Direction", "direction"),
       textColumn("Label", "label", "code"),
-      numericColumn("Total time", (row) => formatUs(row.totalDurationUs)),
-      numericColumn("Max", (row) => formatUs(row.maxDurationUs)),
+      numericColumn("Total time", (row) => formatUs(row.totalDurationUs as number | null)),
+      numericColumn("Max", (row) => formatUs(row.maxDurationUs as number | null)),
       numericColumn("Occurrences", (row) => formatResultValue(row.occurrences)),
       textColumn("Evidence", "evidenceRef", "code"),
     ],
@@ -255,14 +275,14 @@ function renderBrowser(model) {
   renderListSection("#browser-limitations", profile.limitations);
 }
 
-function renderGuidance(model) {
-  const section = document.querySelector("#guidance");
+function renderGuidance(model: ResultModel): void {
+  const section = mustElement<HTMLElement>("#guidance");
   const visible = model.guidance.observations.length > 0 || model.guidance.constraints.length > 0;
   section.hidden = !visible;
   if (!visible) return;
 
   renderTable(
-    document.querySelector("#observations-table"),
+    mustElement("#observations-table"),
     [
       textColumn("Observation", "summary"),
       textColumn("Evidence", "evidenceRef", "code"),
@@ -273,14 +293,20 @@ function renderGuidance(model) {
   renderListSection("#constraints", model.guidance.constraints);
 }
 
-function renderDiagnostics(diagnostics) {
-  const section = document.querySelector("#diagnostics");
+function renderDiagnostics(diagnostics: readonly string[]): void {
+  const section = mustElement<HTMLElement>("#diagnostics");
   section.hidden = diagnostics.length === 0;
   if (section.hidden) return;
-  renderList(section.querySelector("ul"), diagnostics);
+  const list = section.querySelector<HTMLUListElement>("ul");
+  if (!list) throw new Error("Missing diagnostics list");
+  renderList(list, diagnostics);
 }
 
-function renderDetails(container, rows, formatter = (row) => formatResultValue(row.value)) {
+function renderDetails(
+  container: Element,
+  rows: readonly DetailRow[],
+  formatter: (row: DetailRow) => string = (row) => formatResultValue(row.value),
+): void {
   container.replaceChildren();
   for (const row of rows) {
     const wrapper = document.createElement("div");
@@ -293,7 +319,10 @@ function renderDetails(container, rows, formatter = (row) => formatResultValue(r
   }
 }
 
-function renderInlineDetails(container, entries) {
+function renderInlineDetails(
+  container: Element,
+  entries: ReadonlyArray<readonly [string, unknown]>,
+): void {
   container.replaceChildren();
   for (const [label, value] of entries) {
     const item = document.createElement("span");
@@ -304,22 +333,31 @@ function renderInlineDetails(container, entries) {
   }
 }
 
-function renderListSection(selector, rows) {
-  const container = document.querySelector(selector);
+function renderListSection(selector: string, rows: readonly string[]): void {
+  const container = mustElement<HTMLElement>(selector);
   container.hidden = rows.length === 0;
-  if (!container.hidden) renderList(container.querySelector("ul"), rows);
+  if (!container.hidden) {
+    const list = container.querySelector<HTMLUListElement>("ul");
+    if (!list) throw new Error(`Missing list in ${selector}`);
+    renderList(list, rows);
+  }
 }
 
-function renderList(container, rows) {
+function renderList(container: HTMLUListElement, rows: readonly string[]): void {
   container.replaceChildren();
   for (const row of rows) {
     const item = document.createElement("li");
-    item.textContent = String(row);
+    item.textContent = row;
     container.append(item);
   }
 }
 
-function renderTable(container, columns, rows, emptyText) {
+function renderTable(
+  container: Element,
+  columns: readonly TableColumn[],
+  rows: readonly object[],
+  emptyText: string,
+): void {
   container.replaceChildren();
   if (rows.length === 0) {
     const empty = document.createElement("p");
@@ -343,7 +381,8 @@ function renderTable(container, columns, rows, emptyText) {
   head.append(headRow);
 
   const body = document.createElement("tbody");
-  for (const row of rows) {
+  for (const sourceRow of rows) {
+    const row = sourceRow as TableRow;
     const tr = document.createElement("tr");
     for (const column of columns) {
       const td = document.createElement("td");
@@ -362,7 +401,7 @@ function renderTable(container, columns, rows, emptyText) {
   container.append(shell);
 }
 
-function textColumn(label, key, className = "") {
+function textColumn(label: string, key: string, className = ""): TableColumn {
   return {
     label,
     className,
@@ -370,11 +409,11 @@ function textColumn(label, key, className = "") {
   };
 }
 
-function numericColumn(label, render) {
+function numericColumn(label: string, render: (row: TableRow) => string): TableColumn {
   return { label, numeric: true, render };
 }
 
-function statusColumn(label, key) {
+function statusColumn(label: string, key: string): TableColumn {
   return {
     label,
     status: key,
@@ -382,11 +421,11 @@ function statusColumn(label, key) {
   };
 }
 
-function metricValue(value, unit) {
-  return formatResultValue(value, { unit });
+function metricValue(value: unknown, unit: unknown): string {
+  return formatResultValue(value, { unit: typeof unit === "string" ? unit : null });
 }
 
-function formatUs(value) {
-  if (value === null || value === undefined) return "—";
+function formatUs(value: number | null): string {
+  if (value === null) return "—";
   return formatResultValue(value / 1000, { unit: "ms" });
 }

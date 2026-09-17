@@ -2,6 +2,10 @@
 
 The Pages surface lets humans and browser-capable coding agents validate and inspect an already captured public runtime-profiler bundle without cloning this repository or running the workload.
 
+The custom profiler UI is authored in TypeScript and compiled to browser JavaScript during the Pages build. The checked-in HTML/CSS and profiler-specific routes remain owned by `runtime-profiler`; `github-pages-template` augments the compiled output with the shared `/stats/` and `/evidence/` surfaces. Deployment is delegated to `reusable-workflows`.
+
+Until `@moritzbrantner/github-pages-template` has a released npm package, the development dependency is pinned to an exact template Git revision. The dependency should move to the released package plus a committed lockfile once that distribution surface is available.
+
 ## Discovery
 
 ```text
