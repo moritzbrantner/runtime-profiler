@@ -14,12 +14,59 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
+  packages: read
   pages: write
   id-token: write
 
 jobs:
+  pages-preflight:
+    name: Pages preflight
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.pages.outputs.enabled }}
+    steps:
+      - name: Check repository Pages configuration
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          status="$({
+            curl --silent --show-error \
+              --output /tmp/pages.json \
+              --write-out '%{http_code}' \
+              --header "Authorization: Bearer $GH_TOKEN" \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/pages"
+          })"
+
+          case "$status" in
+            200)
+              echo "enabled=true" >> "$GITHUB_OUTPUT"
+              ;;
+            404)
+              echo "enabled=false" >> "$GITHUB_OUTPUT"
+              {
+                echo "## GitHub Pages is not enabled yet"
+                echo
+                echo "Enable **Settings → Pages → Build and deployment → Source: GitHub Actions** once for this repository."
+                echo "After that, the next push to main (or a manual workflow dispatch) will deploy automatically."
+              } >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              cat /tmp/pages.json >&2 || true
+              echo "Unexpected GitHub Pages API status: $status" >&2
+              exit 1
+              ;;
+          esac
+
   deploy:
+    name: Deploy Pages
+    needs: pages-preflight
+    if: ${{ needs.pages-preflight.outputs.enabled == 'true' }}
     permissions:
       actions: read
       contents: read
