@@ -20,6 +20,12 @@ permissions:
 
 jobs:
   deploy:
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
+      pages: write
     uses: moritzbrantner/reusable-workflows/.github/workflows/deploy-pages.yml@fd22697af1dfc42e4b8d66e222e1a7c415da2be0
     with:
       node_version: "24"
