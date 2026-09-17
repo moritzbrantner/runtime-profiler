@@ -169,7 +169,8 @@ function targetDetail(target: unknown): string | null {
 }
 
 function artifactRows(report: BundleValidationReport, manifest: JsonRecord): ArtifactRow[] {
-  const statusByPath = new Map(report.artifacts.map((artifact) => [artifact.path, artifact]));
+  const statuses = Array.isArray(report.artifacts) ? report.artifacts : [];
+  const statusByPath = new Map(statuses.map((artifact) => [artifact.path, artifact]));
   return records(manifest.files).map((artifact) => {
     const path = stringOrNull(artifact.path) ?? "";
     const status = statusByPath.get(path);
@@ -198,9 +199,9 @@ export function buildResultModel(report: BundleValidationReport): ResultModel {
   const target = (scenario.target ?? {}) as JsonRecord;
 
   return {
-    valid: report.valid,
-    verifiedFiles: report.verified_files,
-    diagnostics: report.diagnostics,
+    valid: report.valid === true,
+    verifiedFiles: Number.isInteger(report.verified_files) ? report.verified_files : 0,
+    diagnostics: Array.isArray(report.diagnostics) ? report.diagnostics : [],
     identity: [
       { label: "Scenario", value: scenario.id ?? report.scenario_id },
       { label: "Target", value: target.target_type ?? null },
