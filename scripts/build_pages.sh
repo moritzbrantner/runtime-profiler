@@ -4,12 +4,29 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+generated=(
+  site/app.js
+  site/validator.mjs
+  site/results/app.js
+  site/results/model.js
+  site/score/app.js
+  site/score/model.js
+  site/validate.json/validate-json.js
+)
+rm -f "${generated[@]}"
 rm -rf dist
-cp -R site dist
 
-npm exec --yes \
-  --package=git+https://github.com/moritzbrantner/github-pages-template.git#d24d6fb63120a1087a6c7178e08a951d0c2ca060 \
-  -- github-pages-template build \
+npm run typecheck:pages
+npm run compile:pages
+
+for path in "${generated[@]}"; do
+  test -f "$path"
+done
+
+cp -R site dist
+find dist -type f \( -name '*.ts' -o -name '*.mts' \) -delete
+
+./node_modules/.bin/github-pages-template build \
   --config ./pages.config.json \
   --out ./dist \
   --augment

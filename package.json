@@ -1,0 +1,19 @@
+{
+  "name": "runtime-profiler-pages",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck:pages": "tsc --noEmit -p tsconfig.pages.json",
+    "compile:pages": "tsc -p tsconfig.pages.json",
+    "build:pages": "bash scripts/build_pages.sh",
+    "test:pages": "node --test tests/*.test.mjs",
+    "verify:pages": "npm run build:pages && npm run test:pages"
+  },
+  "devDependencies": {
+    "@moritzbrantner/github-pages-template": "git+https://github.com/moritzbrantner/github-pages-template.git#28321ce9f7214f504a3e454dcfeca5e53eeb6cdc",
+    "typescript": "7.0.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

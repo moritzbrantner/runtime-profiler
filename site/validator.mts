@@ -1,3 +1,54 @@
+export type JsonRecord = Record<string, any>;
+
+export interface ArtifactValidationStatus {
+  path: string;
+  verified: boolean;
+  diagnostics: string[];
+}
+
+export interface BundleValidationReport {
+  schema_version: "runtime-profiler/pages-validation/v1";
+  operation: "validate-public-bundle";
+  source: { manifest_url: string };
+  bundle_id: string | null;
+  scenario_id: string | null;
+  valid: boolean;
+  verified_files: number;
+  diagnostics: string[];
+  artifacts: ArtifactValidationStatus[];
+  summary: {
+    metric_count: number;
+    sample_count: number;
+    guidance_observation_count: number;
+  };
+  evidence: {
+    manifest: JsonRecord;
+    scenario: JsonRecord | null;
+    environment: JsonRecord | null;
+    metrics: JsonRecord | null;
+    hotspots: JsonRecord | null;
+    chromium_trace_summary: JsonRecord | null;
+    browser_runtime: JsonRecord | null;
+    agent_guidance: JsonRecord | null;
+  };
+  limitations: string[];
+}
+
+interface FetchResponse {
+  ok: boolean;
+  status: number;
+  text(): Promise<string>;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+type FetchImpl = (input: string | URL) => Promise<FetchResponse>;
+type CryptoImpl = Pick<Crypto, "subtle">;
+
+interface ValidationOptions {
+  fetchImpl?: FetchImpl;
+  cryptoImpl?: CryptoImpl;
+}
+
 const REQUIRED_DOCUMENT_ARTIFACTS = new Map([
   ["scenario.json", "runtime-profiler/scenario-evidence/v1"],
   ["environment.json", "runtime-profiler/environment/v1"],
@@ -25,8 +76,21 @@ const FINGERPRINT_SCHEMAS = new Set([
   "runtime-profiler/environment-fingerprint/v1",
 ]);
 
-export async function validateBundleUrl(manifestUrl, options = {}) {
-  const fetchImpl = options.fetchImpl ?? fetch;
+function records(value: unknown): JsonRecord[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is JsonRecord => Boolean(item) && typeof item === "object")
+    : [];
+}
+
+function record(value: unknown): JsonRecord | null {
+  return Boolean(value) && typeof value === "object" ? (value as JsonRecord) : null;
+}
+
+export async function validateBundleUrl(
+  manifestUrl: string | URL,
+  options: ValidationOptions = {},
+): Promise<BundleValidationReport> {
+  const fetchImpl: FetchImpl = options.fetchImpl ?? ((input) => fetch(input));
   const cryptoImpl = options.cryptoImpl ?? crypto;
   const manifestResponse = await fetchImpl(manifestUrl);
   if (!manifestResponse.ok) {
@@ -34,23 +98,24 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
   }
 
   const manifestText = await manifestResponse.text();
-  let manifest;
+  let manifest: JsonRecord;
   try {
-    manifest = JSON.parse(manifestText);
+    manifest = JSON.parse(manifestText) as JsonRecord;
   } catch {
     throw new Error("Manifest is not valid JSON.");
   }
 
-  const diagnostics = [];
-  const artifacts = [];
-  const documents = {};
+  const diagnostics: string[] = [];
+  const artifacts: ArtifactValidationStatus[] = [];
+  const documents: Record<string, JsonRecord> = {};
   let verifiedFiles = 0;
 
   if (manifest.schema_version !== MANIFEST_SCHEMA) {
-    diagnostics.push(`unsupported bundle manifest schema: ${manifest.schema_version ?? "missing"}`);
+    diagnostics.push(`unsupported bundle manifest schema: ${String(manifest.schema_version ?? "missing")}`);
   }
 
-  const declaredPaths = new Set((manifest.files ?? []).map((artifact) => artifact.path));
+  const manifestFiles = records(manifest.files);
+  const declaredPaths = new Set(manifestFiles.map((artifact) => String(artifact.path ?? "")));
   const requiredPaths = new Set(REQUIRED_DOCUMENT_ARTIFACTS.keys());
   const allowedPaths = new Set([...requiredPaths, ...OPTIONAL_ARTIFACTS]);
   if (![...requiredPaths].every((path) => declaredPaths.has(path))) {
@@ -60,26 +125,27 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
     diagnostics.push("manifest contains an unsupported v1 artifact");
   }
 
-  for (const artifact of manifest.files ?? []) {
-    const status = { path: artifact.path, verified: false, diagnostics: [] };
+  for (const artifact of manifestFiles) {
+    const path = typeof artifact.path === "string" ? artifact.path : "";
+    const status: ArtifactValidationStatus = { path, verified: false, diagnostics: [] };
     artifacts.push(status);
-    if (!isSafeRelativePath(artifact.path)) {
+    if (!isSafeRelativePath(path)) {
       status.diagnostics.push("unsafe artifact path");
-      diagnostics.push(`unsafe artifact path: ${artifact.path}`);
+      diagnostics.push(`unsafe artifact path: ${path}`);
       continue;
     }
 
-    let response;
+    let response: FetchResponse;
     try {
-      response = await fetchImpl(new URL(artifact.path, manifestUrl));
+      response = await fetchImpl(new URL(path, manifestUrl));
     } catch {
       status.diagnostics.push("artifact request failed");
-      diagnostics.push(`artifact request failed: ${artifact.path}`);
+      diagnostics.push(`artifact request failed: ${path}`);
       continue;
     }
     if (!response.ok) {
       status.diagnostics.push(`HTTP ${response.status}`);
-      diagnostics.push(`missing artifact: ${artifact.path}`);
+      diagnostics.push(`missing artifact: ${path}`);
       continue;
     }
 
@@ -87,20 +153,25 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
     const digest = await sha256(bytes, cryptoImpl);
     if (digest !== artifact.sha256) {
       status.diagnostics.push("digest mismatch");
-      diagnostics.push(`digest mismatch: ${artifact.path}`);
+      diagnostics.push(`digest mismatch: ${path}`);
       continue;
     }
 
     verifiedFiles += 1;
     status.verified = true;
-    if (!DOCUMENT_ARTIFACTS.has(artifact.path)) {
+    if (!DOCUMENT_ARTIFACTS.has(path)) {
       continue;
     }
     try {
-      documents[artifact.path] = JSON.parse(new TextDecoder().decode(bytes));
+      const parsed = record(JSON.parse(new TextDecoder().decode(bytes)));
+      if (parsed) {
+        documents[path] = parsed;
+      } else {
+        throw new Error("document is not an object");
+      }
     } catch {
       status.diagnostics.push("invalid JSON");
-      diagnostics.push(`invalid JSON artifact: ${artifact.path}`);
+      diagnostics.push(`invalid JSON artifact: ${path}`);
     }
   }
 
@@ -112,16 +183,16 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
     schema_version: "runtime-profiler/pages-validation/v1",
     operation: "validate-public-bundle",
     source: { manifest_url: String(manifestUrl) },
-    bundle_id: manifest.bundle_id ?? null,
-    scenario_id: manifest.scenario_id ?? null,
+    bundle_id: typeof manifest.bundle_id === "string" ? manifest.bundle_id : null,
+    scenario_id: typeof manifest.scenario_id === "string" ? manifest.scenario_id : null,
     valid: diagnostics.length === 0,
     verified_files: verifiedFiles,
     diagnostics,
     artifacts,
     summary: {
-      metric_count: Array.isArray(metrics?.metrics) ? metrics.metrics.length : 0,
-      sample_count: Array.isArray(metrics?.samples) ? metrics.samples.length : 0,
-      guidance_observation_count: Array.isArray(guidance?.observations) ? guidance.observations.length : 0,
+      metric_count: records(metrics?.metrics).length,
+      sample_count: records(metrics?.samples).length,
+      guidance_observation_count: records(guidance?.observations).length,
     },
     evidence: {
       manifest,
@@ -141,12 +212,16 @@ export async function validateBundleUrl(manifestUrl, options = {}) {
   };
 }
 
-export function validateDocuments(manifest, documents, diagnostics = []) {
+export function validateDocuments(
+  manifest: JsonRecord,
+  documents: Record<string, JsonRecord>,
+  diagnostics: string[] = [],
+): string[] {
   for (const [path, expectedSchema] of DOCUMENT_ARTIFACTS) {
     const document = documents[path];
     if (!document) continue;
     if (document.schema_version !== expectedSchema) {
-      diagnostics.push(`unsupported ${path} schema: ${document.schema_version ?? "missing"}`);
+      diagnostics.push(`unsupported ${path} schema: ${String(document.schema_version ?? "missing")}`);
     }
   }
 
@@ -175,9 +250,9 @@ export function validateDocuments(manifest, documents, diagnostics = []) {
       diagnostics.push("environment fingerprint schema does not match manifest");
     }
   }
-  if (!FINGERPRINT_SCHEMAS.has(manifest.environment_fingerprint_schema_version)) {
+  if (!FINGERPRINT_SCHEMAS.has(String(manifest.environment_fingerprint_schema_version ?? ""))) {
     diagnostics.push(
-      `unsupported environment fingerprint schema: ${manifest.environment_fingerprint_schema_version ?? "missing"}`,
+      `unsupported environment fingerprint schema: ${String(manifest.environment_fingerprint_schema_version ?? "missing")}`,
     );
   }
 
@@ -186,15 +261,21 @@ export function validateDocuments(manifest, documents, diagnostics = []) {
     diagnostics.push("agent guidance identity is incompatible with manifest");
   }
 
-  validateNativePerf(manifest, scenario, documents["hotspots.json"], diagnostics);
-  validateBrowserJourney(manifest, scenario, metrics, documents, diagnostics);
+  validateNativePerf(manifest, scenario ?? null, documents["hotspots.json"] ?? null, diagnostics);
+  validateBrowserJourney(manifest, scenario ?? null, metrics ?? null, documents, diagnostics);
   return diagnostics;
 }
 
-function validateNativePerf(manifest, scenario, hotspots, diagnostics) {
-  const nativeRequested = Array.isArray(scenario?.collectors)
-    ? scenario.collectors.includes("native-perf")
-    : false;
+function validateNativePerf(
+  manifest: JsonRecord,
+  scenario: JsonRecord | null,
+  hotspots: JsonRecord | null,
+  diagnostics: string[],
+): void {
+  const collectors = records(scenario?.collectors);
+  const collectorNames = Array.isArray(scenario?.collectors) ? scenario.collectors : [];
+  void collectors;
+  const nativeRequested = collectorNames.includes("native-perf");
   const rawPerfPresent = hasArtifact(manifest, "native-perf-report.tsv");
   if (nativeRequested) {
     if (
@@ -205,7 +286,7 @@ function validateNativePerf(manifest, scenario, hotspots, diagnostics) {
       !hotspots?.metric ||
       !hotspots?.unit ||
       !Number.isInteger(hotspots?.sample_period) ||
-      hotspots.sample_period <= 0 ||
+      Number(hotspots?.sample_period) <= 0 ||
       !hotspots?.symbolization_mode
     ) {
       diagnostics.push("native-perf scenario does not contain complete native-perf hotspot evidence");
@@ -223,7 +304,7 @@ function validateNativePerf(manifest, scenario, hotspots, diagnostics) {
       diagnostics.push("native-perf target toolchain identity is only partially recorded");
     }
     if (
-      hotspots?.target_toolchain_fingerprint &&
+      typeof hotspots?.target_toolchain_fingerprint === "string" &&
       !/^[a-f0-9]{64}$/.test(hotspots.target_toolchain_fingerprint)
     ) {
       diagnostics.push("native-perf target toolchain fingerprint is malformed");
@@ -241,37 +322,43 @@ function validateNativePerf(manifest, scenario, hotspots, diagnostics) {
   }
 }
 
-function validateBrowserJourney(manifest, scenario, metrics, documents, diagnostics) {
-  const browserRequested = Array.isArray(scenario?.collectors)
-    ? scenario.collectors.includes("browser-chromium")
-    : false;
+function validateBrowserJourney(
+  manifest: JsonRecord,
+  scenario: JsonRecord | null,
+  metrics: JsonRecord | null,
+  documents: Record<string, JsonRecord>,
+  diagnostics: string[],
+): void {
+  const collectorNames = Array.isArray(scenario?.collectors) ? scenario.collectors : [];
+  const browserRequested = collectorNames.includes("browser-chromium");
   const browserPaths = ["chromium-trace.json", "chromium-trace-summary.json", "browser-runtime.json"];
   const browserPresence = browserPaths.map((path) => hasArtifact(manifest, path));
 
   if (browserRequested) {
-    if (scenario?.target?.target_type !== "browser-journey") {
+    if (record(scenario?.target)?.target_type !== "browser-journey") {
       diagnostics.push("browser-chromium collector requires browser-journey evidence");
     }
     if (!browserPresence.every(Boolean)) {
       diagnostics.push("browser journey is missing Chromium trace evidence artifacts");
       return;
     }
-    if ((metrics?.metrics?.length ?? 0) !== 0 || (metrics?.samples?.length ?? 0) !== 0) {
+    if (records(metrics?.metrics).length !== 0 || records(metrics?.samples).length !== 0) {
       diagnostics.push(
         "browser journey must not relabel Playwright driver process measurements as application metrics",
       );
     }
     const runtime = documents["browser-runtime.json"];
+    const viewport = record(runtime?.viewport);
     if (
       !runtime?.adapter_version ||
       !runtime?.node_version ||
       !runtime?.playwright_version ||
       runtime?.browser_name !== "chromium" ||
       !runtime?.browser_version ||
-      !Number.isInteger(runtime?.viewport?.width) ||
-      runtime.viewport.width <= 0 ||
-      !Number.isInteger(runtime?.viewport?.height) ||
-      runtime.viewport.height <= 0 ||
+      !Number.isInteger(viewport?.width) ||
+      Number(viewport?.width) <= 0 ||
+      !Number.isInteger(viewport?.height) ||
+      Number(viewport?.height) <= 0 ||
       !Array.isArray(runtime?.trace_categories) ||
       runtime.trace_categories.length === 0
     ) {
@@ -282,20 +369,21 @@ function validateBrowserJourney(manifest, scenario, metrics, documents, diagnost
   }
 }
 
-function hasArtifact(manifest, path) {
-  return Array.isArray(manifest.files)
-    ? manifest.files.some((artifact) => artifact.path === path)
-    : false;
+function hasArtifact(manifest: JsonRecord, path: string): boolean {
+  return records(manifest.files).some((artifact) => artifact.path === path);
 }
 
-export async function sha256(bytes, cryptoImpl = crypto) {
-  const digest = await cryptoImpl.subtle.digest("SHA-256", bytes);
+export async function sha256(
+  bytes: Uint8Array,
+  cryptoImpl: CryptoImpl = crypto,
+): Promise<string> {
+  const digest = await cryptoImpl.subtle.digest("SHA-256", bytes as BufferSource);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
 
-export function isSafeRelativePath(path) {
+export function isSafeRelativePath(path: unknown): path is string {
   if (typeof path !== "string" || !path || path.startsWith("/") || path.includes("\\")) {
     return false;
   }
