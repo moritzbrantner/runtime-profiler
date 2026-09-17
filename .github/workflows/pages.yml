@@ -6,6 +6,7 @@ on:
     paths:
       - "site/**"
       - "package.json"
+      - "package-lock.json"
       - "tsconfig.pages.json"
       - "pages.config.json"
       - "scripts/build_pages.sh"
@@ -23,7 +24,7 @@ jobs:
     with:
       node_version: "24"
       bun_version: ""
-      install_command: "npm install --ignore-scripts --no-audit --no-fund"
+      install_command: "npm ci --ignore-scripts --no-audit --no-fund"
       build_command: "npm run build:pages"
       artifact_path: dist
       cache_bun: false
