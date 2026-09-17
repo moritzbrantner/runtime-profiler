@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "name": "runtime-profiler",
+    "repository": "moritzbrantner/runtime-profiler",
+    "basePath": "/runtime-profiler/",
+    "kicker": "Reproducible runtime evidence for coding agents",
+    "description": "Capture, validate, inspect, and compare bounded runtime evidence while keeping project-specific evaluation policy outside the profiler."
+  },
+  "links": [
+    {
+      "label": "Results",
+      "href": "/runtime-profiler/results/"
+    },
+    {
+      "label": "Score history",
+      "href": "/runtime-profiler/score/"
+    },
+    {
+      "label": "Source",
+      "href": "https://github.com/moritzbrantner/runtime-profiler"
+    }
+  ],
+  "evidenceSources": [
+    {
+      "id": "coding-tooling",
+      "label": "Repository verification",
+      "kind": "coding-tooling-analysis-v1",
+      "producer": "coding-tooling",
+      "url": "https://moritzbrantner.github.io/coding-tooling/analysis.json/?repo=moritzbrantner/runtime-profiler"
+    }
+  ]
+}

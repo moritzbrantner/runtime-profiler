@@ -36,6 +36,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.98.0
         with:
@@ -50,7 +55,7 @@ jobs:
       - name: Check contracts
         run: python3 scripts/check_contracts.py
 
-      - name: Test Pages and score-history JavaScript
+      - name: Test and build Pages surfaces
         run: |
           node --check site/app.js
           node --check site/validator.mjs
@@ -59,6 +64,7 @@ jobs:
           node --check site/results/app.js
           node --check site/results/model.js
           node --test tests/*.test.mjs
+          bash scripts/build_pages.sh
 
       - name: Check formatting
         run: cargo fmt --check
