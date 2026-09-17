@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "pages.config.json"
+      - "scripts/build_pages.sh"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -55,6 +57,16 @@ jobs:
           echo "::error::Could not determine GitHub Pages configuration (HTTP $status)."
           exit 1
 
+      - name: Install Node.js
+        if: steps.pages.outputs.enabled == 'true'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+
+      - name: Build Pages artifact
+        if: steps.pages.outputs.enabled == 'true'
+        run: bash scripts/build_pages.sh
+
       - name: Configure Pages
         if: steps.pages.outputs.enabled == 'true'
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
@@ -63,7 +75,7 @@ jobs:
         if: steps.pages.outputs.enabled == 'true'
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:
-          path: site
+          path: dist
 
   deploy:
     if: needs.build.outputs.pages-enabled == 'true'
