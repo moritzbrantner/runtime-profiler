@@ -39,13 +39,11 @@ jobs:
             parent_dir="$RUNNER_TEMP/runtime-profiler-history-parent"
             git worktree add --detach "$parent_dir" "$parent_sha"
 
-            cargo generate-lockfile
-            cargo build --release
+            cargo build --release --locked
 
             (
               cd "$parent_dir"
-              cargo generate-lockfile
-              cargo build --release
+              cargo build --release --locked
               target/release/runtime-profiler capture \
                 --scenario "$GITHUB_WORKSPACE/examples/history-score.yaml" \
                 --output "$GITHUB_WORKSPACE/target/history-reference"
