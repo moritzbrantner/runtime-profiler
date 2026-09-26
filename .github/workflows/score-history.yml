@@ -34,6 +34,8 @@ jobs:
           parent_sha="$(git rev-parse "${GITHUB_SHA}^1")"
           echo "parent_sha=$parent_sha" >> "$GITHUB_OUTPUT"
           mkdir -p target
+          workload_digest="sha256:$(sha256sum tests/fixtures/history-score-bundle/manifest.json | cut -d ' ' -f1)"
+          echo "workload_digest=$workload_digest" >> "$GITHUB_OUTPUT"
 
           set +e
           (
@@ -42,10 +44,14 @@ jobs:
             git worktree add --detach "$parent_dir" "$parent_sha"
 
             cargo build --release --locked
+            rm -rf target/history-score-fixture
+            cp -R tests/fixtures/history-score-bundle target/history-score-fixture
 
             (
               cd "$parent_dir"
               cargo build --release --locked
+              rm -rf target/history-score-fixture
+              cp -R "$GITHUB_WORKSPACE/tests/fixtures/history-score-bundle" target/history-score-fixture
               target/release/runtime-profiler capture \
                 --scenario "$GITHUB_WORKSPACE/examples/history-score.yaml" \
                 --output "$GITHUB_WORKSPACE/target/history-reference"
@@ -88,6 +94,7 @@ jobs:
       - name: Append runtime score snapshot
         env:
           PARENT_SHA: ${{ steps.measurement.outputs.parent_sha }}
+          WORKLOAD_DIGEST: ${{ steps.measurement.outputs.workload_digest }}
         shell: bash
         run: |
           commit_timestamp="$(git show -s --format=%cI "$GITHUB_SHA")"
@@ -98,6 +105,7 @@ jobs:
             --commit "$GITHUB_SHA"
             --parent "$PARENT_SHA"
             --timestamp "$commit_timestamp"
+            --workload-digest "$WORKLOAD_DIGEST"
           )
           if [[ -f target/history-score.json ]]; then
             args+=(--score target/history-score.json)
