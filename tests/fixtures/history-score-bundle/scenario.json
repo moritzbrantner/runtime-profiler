@@ -1,0 +1,20 @@
+{
+  "schema_version": "runtime-profiler/scenario-evidence/v1",
+  "id": "history-score-fixture",
+  "digest": "16d9b819f3ee9dc68479f39b163ebb048c787013ff5cd7774fb900cdcd6d5c4c",
+  "target": {
+    "target_type": "command",
+    "program": "sh",
+    "argument_count": 2,
+    "working_directory_set": false,
+    "inherited_environment_names": []
+  },
+  "run": {
+    "warmup_iterations": 1,
+    "measurement_iterations": 5,
+    "timeout_seconds": 30
+  },
+  "collectors": [
+    "process"
+  ]
+}
