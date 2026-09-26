@@ -20,8 +20,11 @@ export type ScoreEntry = {
   score: number | null;
   average_change_percent: number | null;
   status: string | null;
-  rating: string | null;
   reason: string | null;
+  scenarioId: string | null;
+  scenarioDigest: string | null;
+  environmentFingerprint: string | null;
+  workloadDigest: string | null;
   metrics: ScoreMetric[];
 }
 
@@ -83,8 +86,11 @@ export function normalizeHistory(document: unknown): ScoreHistory {
       score: numberOrNull(entry.score),
       average_change_percent: numberOrNull(entry.average_change_percent),
       status: stringOrNull(entry.status),
-      rating: stringOrNull(entry.rating),
       reason: stringOrNull(entry.reason),
+      scenarioId: stringOrNull(entry.scenario_id),
+      scenarioDigest: stringOrNull(entry.scenario_digest),
+      environmentFingerprint: stringOrNull(entry.environment_fingerprint),
+      workloadDigest: stringOrNull(entry.workload_digest),
       metrics: records(entry.metrics).map(normalizeMetric),
     }))
     .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
@@ -101,6 +107,21 @@ export function latestEntry(history: ScoreHistory): ScoreEntry | null {
 
 export function shortCommit(commit: string): string {
   return commit.slice(0, 8);
+}
+
+export function shortDigest(digest: string | null): string {
+  return digest ? digest.replace(/^sha256:/, "").slice(0, 8) : "legacy";
+}
+
+export function currentWorkloadEntries(entries: ScoreEntry[]): ScoreEntry[] {
+  const latest = entries.at(-1);
+  if (!latest) return [];
+  if (!latest.scenarioDigest || !latest.workloadDigest) return [latest];
+  return entries.filter(
+    (entry) =>
+      entry.scenarioDigest === latest.scenarioDigest &&
+      entry.workloadDigest === latest.workloadDigest,
+  );
 }
 
 export function chartPoints(
