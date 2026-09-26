@@ -1,11 +1,15 @@
 schema_version: runtime-profiler/scenario/v1
-id: runtime-profiler-history-score
+id: runtime-profiler-history-self-score-v1
 target:
   type: command
-  program: sh
+  program: target/release/runtime-profiler
   args:
-    - -c
-    - sleep 0.02
+    - score
+    - --reference
+    - target/history-score-fixture
+    - --candidate
+    - target/history-score-fixture
+    - --json
 run:
   warmup_iterations: 3
   measurement_iterations: 25
