@@ -1,0 +1,25 @@
+{
+  "schema_version": "runtime-profiler/agent-guidance/v1",
+  "scenario_id": "history-score-fixture",
+  "observations": [
+    {
+      "id": "process.wall_time",
+      "summary": "process.wall_time: median 3.000 ms, p95 5.000 ms, mean 3.000 ms across 5 samples",
+      "evidence_ref": "metrics.json#process.wall_time"
+    },
+    {
+      "id": "process.success_rate",
+      "summary": "process.success_rate: median 1.000 ratio, p95 1.000 ratio, mean 1.000 ratio across 5 samples",
+      "evidence_ref": "metrics.json#process.success_rate"
+    }
+  ],
+  "constraints": [
+    "This immutable fixture exists to benchmark runtime-profiler parsing, validation, normalization, and score serialization; its synthetic measurements are not performance evidence."
+  ],
+  "evidence_refs": [
+    "manifest.json",
+    "environment.json",
+    "metrics.json",
+    "hotspots.json"
+  ]
+}
