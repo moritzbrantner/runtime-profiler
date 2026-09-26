@@ -49,7 +49,7 @@
     "The browser validator covers the public v1 bundle contract and SHA-256 artifact integrity; native validation remains authoritative.",
     "The visual result explorer is a projection of validated normalized bundle evidence, not a second source of measurements or policy.",
     "Reference-relative scoring requires native validation plus identical scenario and environment fingerprints; it does not define project regression policy.",
-    "Repository history scores each main commit against its first parent on the same runner; this is adjacent-revision retention, not an absolute performance index.",
+    "Score history is informational adjacent-revision evidence on hosted runners and is grouped by versioned workload identity; it is not a controlled performance trend or release gate.",
     "A source host that blocks browser CORS cannot be inspected remotely."
   ]
 }
