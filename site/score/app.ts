@@ -1,9 +1,11 @@
 import {
   chartPoints,
+  currentWorkloadEntries,
   latestEntry,
   metricChange,
   normalizeHistory,
   shortCommit,
+  shortDigest,
   type ScoreEntry,
 } from "./model.js";
 
@@ -18,7 +20,7 @@ function mustElement<T extends Element>(selector: string): T {
 
 const status = mustElement<HTMLElement>("#status");
 const latest = mustElement<HTMLElement>("#latest-score");
-const rating = mustElement<HTMLElement>("#latest-rating");
+const context = mustElement<HTMLElement>("#latest-context");
 const averageChange = mustElement<HTMLElement>("#average-change");
 const commitLink = mustElement<HTMLAnchorElement>("#latest-commit");
 const parentLink = mustElement<HTMLAnchorElement>("#parent-commit");
@@ -34,10 +36,6 @@ function signedPercent(value: number | null): string {
   if (value === null) return "—";
   if (value === 0) return "±0.000%";
   return `${value > 0 ? "+" : ""}${value.toFixed(3)}%`;
-}
-
-function ratingText(value: string | null): string {
-  return String(value ?? "unavailable").replaceAll("-", " ");
 }
 
 function renderChart(entries: ScoreEntry[]): void {
@@ -107,6 +105,7 @@ function renderTable(entries: ScoreEntry[]): void {
           <td>${new Date(entry.timestamp).toLocaleString()}</td>
           <td><strong>${scoreText(entry.score)}</strong></td>
           <td>${signedPercent(entry.average_change_percent)}</td>
+          <td title="${entry.workloadDigest ?? "legacy workload without digest"}">${shortDigest(entry.workloadDigest)}</td>
           <td>${entry.status ?? "—"}</td>
         </tr>`,
     )
@@ -125,19 +124,20 @@ async function load(): Promise<void> {
     }
 
     latest.textContent = scoreText(entry.score);
-    rating.textContent =
+    context.textContent =
       entry.status === "scored"
-        ? `${ratingText(entry.rating)} · retention versus first parent`
+        ? `retention versus first parent · workload ${shortDigest(entry.workloadDigest)}`
         : `comparison unavailable · ${entry.reason ?? "no reason recorded"}`;
     averageChange.textContent = signedPercent(entry.average_change_percent);
     commitLink.textContent = shortCommit(entry.commit);
     commitLink.href = `https://github.com/moritzbrantner/runtime-profiler/commit/${entry.commit}`;
     parentLink.textContent = shortCommit(entry.parent_commit);
     parentLink.href = `https://github.com/moritzbrantner/runtime-profiler/commit/${entry.parent_commit}`;
-    renderChart(history.entries);
+    const workloadEntries = currentWorkloadEntries(history.entries);
+    renderChart(workloadEntries.slice(-60));
     renderMetrics(entry);
     renderTable(history.entries);
-    status.textContent = `${history.entries.length} commit comparison${history.entries.length === 1 ? "" : "s"} retained.`;
+    status.textContent = `${workloadEntries.length} current-workload comparison${workloadEntries.length === 1 ? "" : "s"} · ${history.entries.length} total retained.`;
   } catch (error: unknown) {
     status.textContent = `Runtime score history is not available yet: ${error instanceof Error ? error.message : String(error)}`;
   }
