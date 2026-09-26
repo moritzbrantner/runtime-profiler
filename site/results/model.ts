@@ -1,11 +1,11 @@
 import type { BundleValidationReport, JsonRecord } from "../validator.mjs";
 
-export interface DetailRow {
+export type DetailRow = {
   label: string;
   value: unknown;
 }
 
-export interface MeasurementRow {
+export type MeasurementRow = {
   id: string | null;
   unit: string | null;
   preferredDirection: string | null;
@@ -17,7 +17,7 @@ export interface MeasurementRow {
   maximum: number | null;
 }
 
-export interface SampleRow {
+export type SampleRow = {
   iteration: number | null;
   durationMs: number | null;
   maxRssKib: number | null;
@@ -26,7 +26,7 @@ export interface SampleRow {
   succeeded: boolean;
 }
 
-export interface NativeHotspotRow {
+export type NativeHotspotRow = {
   symbol: string | null;
   sourceFile: string | null;
   line: number | null;
@@ -36,7 +36,7 @@ export interface NativeHotspotRow {
   evidenceRef: string | null;
 }
 
-export interface NativeProfile {
+export type NativeProfile = {
   status: string;
   reason: string | null;
   collector: string | null;
@@ -49,7 +49,7 @@ export interface NativeProfile {
   rows: NativeHotspotRow[];
 }
 
-export interface BrowserSummary {
+export type BrowserSummary = {
   traceEventCount: number | null;
   topLevelTaskCount: number | null;
   topLevelDurationUs: number | null;
@@ -64,7 +64,7 @@ export interface BrowserSummary {
   boundaryMarkersTruncated: boolean;
 }
 
-export interface BrowserLongTaskRow {
+export type BrowserLongTaskRow = {
   name: string | null;
   category: string | null;
   startUs: number | null;
@@ -73,7 +73,7 @@ export interface BrowserLongTaskRow {
   evidenceRef: string | null;
 }
 
-export interface BrowserHotPathRow {
+export type BrowserHotPathRow = {
   frames: string;
   runtimeKind: string | null;
   totalDurationUs: number | null;
@@ -82,13 +82,13 @@ export interface BrowserHotPathRow {
   evidenceRef: string | null;
 }
 
-export interface RuntimeAttributionRow {
+export type RuntimeAttributionRow = {
   runtimeKind: string | null;
   inclusiveDurationUs: number | null;
   eventCount: number | null;
 }
 
-export interface BoundaryMarkerRow {
+export type BoundaryMarkerRow = {
   direction: string | null;
   label: string | null;
   totalDurationUs: number | null;
@@ -97,7 +97,7 @@ export interface BoundaryMarkerRow {
   evidenceRef: string | null;
 }
 
-export interface BrowserProfile {
+export type BrowserProfile = {
   runtime: JsonRecord | null;
   summary: BrowserSummary;
   longTasks: BrowserLongTaskRow[];
@@ -107,13 +107,13 @@ export interface BrowserProfile {
   limitations: string[];
 }
 
-export interface GuidanceObservation {
+export type GuidanceObservation = {
   id: string | null;
   summary: string | null;
   evidenceRef: string | null;
 }
 
-export interface ArtifactRow {
+export type ArtifactRow = {
   path: string;
   mediaType: string | null;
   sha256: string | null;
@@ -121,7 +121,7 @@ export interface ArtifactRow {
   diagnostics: string[];
 }
 
-export interface ResultModel {
+export type ResultModel = {
   valid: boolean;
   verifiedFiles: number;
   diagnostics: string[];
@@ -332,7 +332,7 @@ export function buildResultModel(report: BundleValidationReport): ResultModel {
   };
 }
 
-export interface FormatResultOptions {
+export type FormatResultOptions = {
   timestamp?: boolean;
   unit?: string | null;
 }

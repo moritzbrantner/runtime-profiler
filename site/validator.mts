@@ -1,12 +1,12 @@
 export type JsonRecord = Record<string, any>;
 
-export interface ArtifactValidationStatus {
+export type ArtifactValidationStatus = {
   path: string;
   verified: boolean;
   diagnostics: string[];
 }
 
-export interface BundleValidationReport {
+export type BundleValidationReport = {
   schema_version: "runtime-profiler/pages-validation/v1";
   operation: "validate-public-bundle";
   source: { manifest_url: string };
@@ -34,7 +34,7 @@ export interface BundleValidationReport {
   limitations: string[];
 }
 
-interface FetchResponse {
+type FetchResponse = {
   ok: boolean;
   status: number;
   text(): Promise<string>;
@@ -44,7 +44,7 @@ interface FetchResponse {
 type FetchImpl = (input: string | URL) => Promise<FetchResponse>;
 type CryptoImpl = Pick<Crypto, "subtle">;
 
-interface ValidationOptions {
+type ValidationOptions = {
   fetchImpl?: FetchImpl;
   cryptoImpl?: CryptoImpl;
 }

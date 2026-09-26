@@ -1,19 +1,19 @@
 export const HISTORY_SCHEMA = "runtime-profiler/score-history/v1";
 
-export interface ScoreStatistic {
+export type ScoreStatistic = {
   statistic: string | null;
   change_percent: number | null;
   score: number | null;
 }
 
-export interface ScoreMetric {
+export type ScoreMetric = {
   id: string | null;
   score: number | null;
   average_change_percent: number | null;
   statistics: ScoreStatistic[];
 }
 
-export interface ScoreEntry {
+export type ScoreEntry = {
   commit: string;
   parent_commit: string;
   timestamp: string;
@@ -25,13 +25,13 @@ export interface ScoreEntry {
   metrics: ScoreMetric[];
 }
 
-export interface ScoreHistory {
+export type ScoreHistory = {
   schema_version: typeof HISTORY_SCHEMA;
   repository: string | null;
   entries: ScoreEntry[];
 }
 
-export interface ChartPoint extends ScoreEntry {
+export type ChartPoint = ScoreEntry & {
   x: number;
   y: number;
 }
