@@ -12,6 +12,7 @@ const metadata = {
   commit: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   parent_commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   timestamp: "2026-09-03T18:00:00Z",
+  workload_digest: "sha256:e99b2e5e92ac0ce41535a0a6b660f112320b47281a0a82142573807ef281311c",
 };
 
 function score(value = 96) {
@@ -66,10 +67,12 @@ test("runtime history stores parent-relative score and signed changes", () => {
     timestamp: metadata.timestamp,
     status: "scored",
     score: 96,
-    rating: "good",
     average_change_percent: -1.25,
     scenario_id: "history-smoke",
+    scenario_digest: "scenario",
     environment_fingerprint_schema_version: "runtime-profiler/environment-fingerprint/v1",
+    environment_fingerprint: "environment",
+    workload_digest: metadata.workload_digest,
     metrics: [
       {
         id: "process.wall_time",
@@ -109,4 +112,11 @@ test("rerunning the same commit replaces the existing history entry", () => {
 
   assert.equal(rerun.entries.length, 1);
   assert.equal(rerun.entries[0].score, 100);
+});
+
+test("runtime history requires explicit workload identity", () => {
+  assert.throws(
+    () => appendRuntimeScoreHistory(null, score(), { ...metadata, workload_digest: undefined }),
+    /workload_digest/,
+  );
 });
