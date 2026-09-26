@@ -7,7 +7,7 @@ import {
 } from "./model.js";
 
 type TableRow = Record<string, any>;
-interface TableColumn {
+type TableColumn = {
   label: string;
   numeric?: boolean;
   className?: string;
