@@ -1,0 +1,13 @@
+{
+  "schema_version": "runtime-profiler/environment/v1",
+  "environment_fingerprint_schema_version": "runtime-profiler/environment-fingerprint/v1",
+  "fingerprint": "3ec4c9a6d3ce8620241ff096598a8fb83e3211e3d67794fac01dcb7ba09e9d4c",
+  "operating_system": "linux",
+  "architecture": "x86_64",
+  "kernel_release": "fixture",
+  "logical_cpu_count": 1,
+  "source": {
+    "git_sha": null,
+    "dirty": null
+  }
+}
