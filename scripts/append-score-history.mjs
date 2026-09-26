@@ -34,8 +34,19 @@ function metricSnapshot(metric) {
 }
 
 export function appendRuntimeScoreHistory(existing, score, metadata) {
-  if (!metadata?.repository || !metadata?.commit || !metadata?.parent_commit || !metadata?.timestamp) {
-    throw new Error("repository, commit, parent_commit, and timestamp metadata are required");
+  if (
+    !metadata?.repository ||
+    !metadata?.commit ||
+    !metadata?.parent_commit ||
+    !metadata?.timestamp ||
+    !metadata?.workload_digest
+  ) {
+    throw new Error(
+      "repository, commit, parent_commit, timestamp, and workload_digest metadata are required",
+    );
+  }
+  if (!/^sha256:[a-f0-9]{64}$/.test(metadata.workload_digest)) {
+    throw new Error("workload_digest must be a sha256 digest");
   }
   if (score && score.schema_version !== "runtime-profiler/score/v1") {
     throw new Error("score report is not runtime-profiler/score/v1");
@@ -63,11 +74,13 @@ export function appendRuntimeScoreHistory(existing, score, metadata) {
     timestamp: metadata.timestamp,
     status: score ? "scored" : "unavailable",
     score: score?.score ?? null,
-    rating: score?.rating ?? "unavailable",
     average_change_percent: average(metrics.map((metric) => metric.average_change_percent)),
     scenario_id: score?.scenario_id ?? null,
+    scenario_digest: score?.scenario_digest ?? null,
     environment_fingerprint_schema_version:
       score?.environment_fingerprint_schema_version ?? null,
+    environment_fingerprint: score?.environment_fingerprint ?? null,
+    workload_digest: metadata.workload_digest,
     metrics,
     excluded_metrics: score?.excluded_metrics ?? [],
     reason: score ? null : metadata.reason ?? "runtime comparison was unavailable",
@@ -101,9 +114,10 @@ export function main(argv = process.argv.slice(2)) {
   const commit = option(argv, "commit");
   const parentCommit = option(argv, "parent");
   const timestamp = option(argv, "timestamp");
-  if (!historyPath || !repository || !commit || !parentCommit || !timestamp) {
+  const workloadDigest = option(argv, "workload-digest");
+  if (!historyPath || !repository || !commit || !parentCommit || !timestamp || !workloadDigest) {
     throw new Error(
-      "Usage: append-score-history --history <path> [--score <path> | --reason-file <path>] --repository <owner/repo> --commit <sha> --parent <sha> --timestamp <iso>",
+      "Usage: append-score-history --history <path> [--score <path> | --reason-file <path>] --repository <owner/repo> --commit <sha> --parent <sha> --timestamp <iso> --workload-digest <sha256:digest>",
     );
   }
 
@@ -118,6 +132,7 @@ export function main(argv = process.argv.slice(2)) {
     commit,
     parent_commit: parentCommit,
     timestamp,
+    workload_digest: workloadDigest,
     reason,
   });
   writeFileSync(absoluteHistory, `${JSON.stringify(updated, null, 2)}\n`, "utf8");
