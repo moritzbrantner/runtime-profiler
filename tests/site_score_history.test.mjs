@@ -87,3 +87,53 @@ test("runtime dashboard does not connect different workload identities", () => {
   assert.equal(current.length, 2);
   assert.ok(current.every((entry) => entry.scenarioDigest === "scenario-current"));
 });
+
+test("runtime dashboard keeps the scored cohort after an unavailable current-workload run", () => {
+  const withUnavailable = normalizeHistory({
+    ...history,
+    entries: [
+      ...history.entries,
+      {
+        commit: "cccccccc33333333",
+        parent_commit: "bbbbbbbb22222222",
+        timestamp: "2026-09-04T12:00:00Z",
+        status: "unavailable",
+        score: null,
+        average_change_percent: null,
+        scenario_digest: null,
+        workload_digest:
+          "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        metrics: [],
+      },
+    ],
+  });
+
+  const current = currentWorkloadEntries(withUnavailable.entries);
+  assert.equal(current.length, 3);
+  assert.equal(chartPoints(current).length, 2);
+});
+
+test("runtime dashboard does not borrow scenario identity across workload changes", () => {
+  const changedWorkload = normalizeHistory({
+    ...history,
+    entries: [
+      ...history.entries,
+      {
+        commit: "cccccccc33333333",
+        parent_commit: "bbbbbbbb22222222",
+        timestamp: "2026-09-04T12:00:00Z",
+        status: "unavailable",
+        score: null,
+        average_change_percent: null,
+        scenario_digest: null,
+        workload_digest:
+          "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        metrics: [],
+      },
+    ],
+  });
+
+  const current = currentWorkloadEntries(changedWorkload.entries);
+  assert.equal(current.length, 1);
+  assert.equal(current[0].commit, "cccccccc33333333");
+});

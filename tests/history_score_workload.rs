@@ -31,10 +31,7 @@ fn checked_in_history_fixture_is_valid_and_traces_to_source_scenario() {
 fn history_scenario_profiles_runtime_profiler_score_path() {
     let loaded =
         load_scenario(Path::new("examples/history-score.yaml")).expect("history score scenario");
-    assert_eq!(
-        loaded.scenario.id,
-        "runtime-profiler-history-self-score-v1"
-    );
+    assert_eq!(loaded.scenario.id, "runtime-profiler-history-self-score-v1");
 
     let Target::Command { program, args, .. } = &loaded.scenario.target else {
         panic!("history score workload must remain a command target");

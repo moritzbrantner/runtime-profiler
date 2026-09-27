@@ -116,11 +116,28 @@ export function shortDigest(digest: string | null): string {
 export function currentWorkloadEntries(entries: ScoreEntry[]): ScoreEntry[] {
   const latest = entries.at(-1);
   if (!latest) return [];
-  if (!latest.scenarioDigest || !latest.workloadDigest) return [latest];
+  if (!latest.workloadDigest) return [latest];
+
+  let identitySource = latest.scenarioDigest ? latest : null;
+  if (!identitySource) {
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      const entry = entries[index];
+      if (
+        entry &&
+        entry.workloadDigest === latest.workloadDigest &&
+        entry.scenarioDigest
+      ) {
+        identitySource = entry;
+        break;
+      }
+    }
+  }
+  if (!identitySource?.scenarioDigest) return [latest];
+
   return entries.filter(
     (entry) =>
-      entry.scenarioDigest === latest.scenarioDigest &&
-      entry.workloadDigest === latest.workloadDigest,
+      entry.workloadDigest === latest.workloadDigest &&
+      (entry.scenarioDigest === identitySource.scenarioDigest || entry.scenarioDigest === null),
   );
 }
 

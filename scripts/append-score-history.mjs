@@ -74,6 +74,7 @@ export function appendRuntimeScoreHistory(existing, score, metadata) {
     timestamp: metadata.timestamp,
     status: score ? "scored" : "unavailable",
     score: score?.score ?? null,
+    rating: score?.rating ?? "unavailable",
     average_change_percent: average(metrics.map((metric) => metric.average_change_percent)),
     scenario_id: score?.scenario_id ?? null,
     scenario_digest: score?.scenario_digest ?? null,

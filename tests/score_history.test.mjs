@@ -67,6 +67,7 @@ test("runtime history stores parent-relative score and signed changes", () => {
     timestamp: metadata.timestamp,
     status: "scored",
     score: 96,
+    rating: "good",
     average_change_percent: -1.25,
     scenario_id: "history-smoke",
     scenario_digest: "scenario",
@@ -103,6 +104,7 @@ test("runtime history records an unavailable comparison instead of inventing a s
 
   assert.equal(history.entries[0].status, "unavailable");
   assert.equal(history.entries[0].score, null);
+  assert.equal(history.entries[0].rating, "unavailable");
   assert.equal(history.entries[0].reason, "scenario fingerprints differ");
 });
 
