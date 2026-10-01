@@ -666,3 +666,26 @@ fn omitted_and_empty_headers_preserve_existing_workload_identity() {
     let normalized = serde_json::to_value(original.scenario).expect("normalize");
     assert!(normalized["target"]["requests"][0].get("headers").is_none());
 }
+
+#[test]
+fn rejects_duplicate_headers_in_raw_json_and_yaml_before_map_normalization() {
+    let root = tempfile::tempdir().expect("temporary fixture");
+    let original = serde_json::to_string(&scenario(root.path(), "/", 200)).expect("JSON");
+    for extension in ["json", "yaml"] {
+        for headers in [
+            r#"{"x-app-id":"one","x-app-id":"two"}"#,
+            r#"{"X-App-Id":"one","x-app-id":"two"}"#,
+        ] {
+            let raw = original.replace(
+                r#""expected_status":200"#,
+                &format!(r#""headers":{headers},"expected_status":200"#),
+            );
+            let path = root.path().join(format!("scenario.{extension}"));
+            fs::write(&path, raw).expect("raw source");
+            assert!(
+                runtime_profiler::load_scenario(&path).is_err(),
+                "duplicate source keys must not collapse"
+            );
+        }
+    }
+}

@@ -310,7 +310,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 2048,
-            "pattern": "^[ -~]+$"
+            "pattern": "^[ -~]*[!-~][ -~]*$"
           }
         },
         "expected_status": {
