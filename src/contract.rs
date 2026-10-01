@@ -89,7 +89,43 @@ pub struct HttpRequest {
     pub body: Option<String>,
     #[serde(default)]
     pub content_type: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_http_headers",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub headers: BTreeMap<String, String>,
     pub expected_status: u16,
+}
+
+fn deserialize_http_headers<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct HeadersVisitor;
+    impl<'de> serde::de::Visitor<'de> for HeadersVisitor {
+        type Value = BTreeMap<String, String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an object with unique case-insensitive HTTP header names")
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: serde::de::MapAccess<'de>,
+        {
+            let mut headers = BTreeMap::new();
+            let mut names = std::collections::BTreeSet::new();
+            while let Some((name, value)) = map.next_entry::<String, String>()? {
+                if !names.insert(name.to_ascii_lowercase()) {
+                    return Err(serde::de::Error::custom("duplicate HTTP header name"));
+                }
+                headers.insert(name, value);
+            }
+            Ok(headers)
+        }
+    }
+    deserializer.deserialize_map(HeadersVisitor)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

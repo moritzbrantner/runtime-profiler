@@ -62,6 +62,19 @@ def check_http_example() -> None:
     for count in [0, 1001]:
         invalid = {**example, "target": {**example["target"], "request_count": count}}
         assert not validator.is_valid(invalid), "HTTP request counts must be bounded"
+    request = example["target"]["requests"][0]
+    declared = {**example, "target": {**example["target"], "requests": [
+        {**request, "headers": {"x-app-id": "fixture-app"}}
+    ]}}
+    validator.validate(declared)
+    for headers in [{"x-app-id": " "}, {"bad name": "value"},
+                    {"x-app-id": "value\r\nInjected: true"},
+                    {"x-app-id": "x" * 2049},
+                    {f"x-{index}": "value" for index in range(17)}]:
+        invalid = {**example, "target": {**example["target"], "requests": [
+            {**request, "headers": headers}
+        ]}}
+        assert not validator.is_valid(invalid), "HTTP header schema must enforce bounds"
     invalid = {**example, "collectors": ["process"]}
     assert not validator.is_valid(invalid), "HTTP requires its own collector"
 

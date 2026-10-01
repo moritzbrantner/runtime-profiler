@@ -25,6 +25,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.enter()
         if self.path == '/slow': time.sleep(2)
         status = 503 if self.path == '/error' else 200
+        if self.path == '/identity':
+            status = 200 if self.headers.get('X-App-Id') == 'private-app' and self.headers.get('X-User-Id') == 'private-user' else 400
         self.send_response(status)
         self.end_headers()
         try: self.wfile.write(b'x' * 2097152 if self.path == '/large' else b'private-response')
@@ -164,6 +166,8 @@ schemas = pathlib.Path(sys.argv[1]) / 'schemas'
 documents = [json.loads(p.read_text()) for p in schemas.glob('*.schema.json')]
 registry = Registry().with_resources((s['$id'], Resource.from_contents(s)) for s in documents)
 bundle = pathlib.Path(sys.argv[2])
+scenario_schema = json.loads((schemas / 'scenario.schema.json').read_text())
+Draft202012Validator(scenario_schema, registry=registry).validate(json.loads((bundle.parent / 'scenario.json').read_text()))
 names = {'manifest': 'bundle-manifest', 'scenario': 'scenario-evidence'}
 for path in bundle.glob('*.json'):
     schema = json.loads((schemas / (names.get(path.stem, path.stem) + '.schema.json')).read_text())
@@ -572,4 +576,116 @@ fn evidence_validation_counts_warmups_toward_total_request_limit() {
         validate_evidence(&scenario, &evidence, &metrics_from_evidence(&evidence)).is_ok(),
         "the exact 10000 total-request limit remains supported"
     );
+}
+
+#[test]
+fn declared_identity_headers_reach_the_fixture_without_entering_evidence() {
+    let root = tempfile::tempdir().expect("temporary fixture");
+    let mut scenario = scenario(root.path(), "/identity", 200);
+    scenario["target"]["requests"][0]["headers"] = json!({
+        "x-app-id": "private-app", "x-user-id": "private-user"
+    });
+    let output = capture(root.path(), &scenario);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_stopped(root.path());
+    let bundle = root.path().join("bundle");
+    assert_bundle_schemas(&bundle);
+    assert!(
+        runtime_profiler::summarize_bundle(&bundle)
+            .expect("metrics")
+            .samples
+            .iter()
+            .all(|sample| sample.succeeded)
+    );
+    for entry in fs::read_dir(&bundle).expect("bundle") {
+        let contents = fs::read_to_string(entry.expect("artifact").path()).expect("contents");
+        assert!(!contents.contains("private-app"));
+        assert!(!contents.contains("private-user"));
+        assert!(!contents.contains("x-app-id"));
+    }
+    let first =
+        runtime_profiler::load_scenario(&root.path().join("scenario.json")).expect("scenario");
+    scenario["target"]["requests"][0]["headers"]["x-app-id"] = json!("another-app");
+    fs::write(
+        root.path().join("scenario.json"),
+        serde_json::to_vec(&scenario).expect("JSON"),
+    )
+    .expect("write");
+    let changed = runtime_profiler::load_scenario(&root.path().join("scenario.json"))
+        .expect("changed scenario");
+    assert_ne!(
+        first.digest, changed.digest,
+        "headers must participate in workload identity"
+    );
+}
+
+#[test]
+fn rejects_unbounded_injected_duplicate_and_transport_control_headers_before_startup() {
+    let root = tempfile::tempdir().expect("temporary fixture");
+    let valid = scenario(root.path(), "/", 200);
+    let too_many: serde_json::Map<String, Value> = (0..17)
+        .map(|index| (format!("x-{index}"), json!("value")))
+        .collect();
+    for headers in [
+        json!({"bad name": "value"}),
+        json!({"x-name\r\nInjected": "value"}),
+        json!({"x-name": "value\r\nInjected: true"}),
+        json!({"x-name": "é"}),
+        json!({"x-name": "x".repeat(2049)}),
+        json!({"x".repeat(65): "value"}),
+        json!({"X-Name": "one", "x-name": "two"}),
+        json!(too_many),
+        json!({"Host": "production.invalid"}),
+        json!({"Content-Length": "999"}),
+        json!({"Transfer-Encoding": "chunked"}),
+        json!({"Content-Type": "text/plain"}),
+    ] {
+        let mut invalid = valid.clone();
+        invalid["target"]["requests"][0]["headers"] = headers;
+        assert!(!capture(root.path(), &invalid).status.success());
+        assert!(!root.path().join("pid").exists());
+        assert!(!root.path().join("bundle").exists());
+    }
+}
+
+#[test]
+fn omitted_and_empty_headers_preserve_existing_workload_identity() {
+    let root = tempfile::tempdir().expect("temporary fixture");
+    let mut scenario = scenario(root.path(), "/", 200);
+    let path = root.path().join("scenario.json");
+    fs::write(&path, serde_json::to_vec(&scenario).expect("JSON")).expect("write");
+    let original = runtime_profiler::load_scenario(&path).expect("existing scenario");
+    scenario["target"]["requests"][0]["headers"] = json!({});
+    fs::write(&path, serde_json::to_vec(&scenario).expect("JSON")).expect("write");
+    let explicit_empty = runtime_profiler::load_scenario(&path).expect("empty headers");
+    assert_eq!(original.digest, explicit_empty.digest);
+    let normalized = serde_json::to_value(original.scenario).expect("normalize");
+    assert!(normalized["target"]["requests"][0].get("headers").is_none());
+}
+
+#[test]
+fn rejects_duplicate_headers_in_raw_json_and_yaml_before_map_normalization() {
+    let root = tempfile::tempdir().expect("temporary fixture");
+    let original = serde_json::to_string(&scenario(root.path(), "/", 200)).expect("JSON");
+    for extension in ["json", "yaml"] {
+        for headers in [
+            r#"{"x-app-id":"one","x-app-id":"two"}"#,
+            r#"{"X-App-Id":"one","x-app-id":"two"}"#,
+        ] {
+            let raw = original.replace(
+                r#""expected_status":200"#,
+                &format!(r#""headers":{headers},"expected_status":200"#),
+            );
+            let path = root.path().join(format!("scenario.{extension}"));
+            fs::write(&path, raw).expect("raw source");
+            assert!(
+                runtime_profiler::load_scenario(&path).is_err(),
+                "duplicate source keys must not collapse"
+            );
+        }
+    }
 }
