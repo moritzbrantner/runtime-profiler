@@ -31,6 +31,7 @@ impl LoadedScenario {
             target_type: match self.scenario.target {
                 Target::Command { .. } => "command",
                 Target::BrowserJourney { .. } => "browser-journey",
+                Target::HttpWorkload { .. } => "http-workload",
             }
             .to_owned(),
             collectors: self
@@ -48,6 +49,7 @@ impl LoadedScenario {
                     },
                     Collector::NativePerf => native_perf::collector_plan(),
                     Collector::BrowserChromium => browser_chromium::collector_plan(),
+                    Collector::HttpCurl => crate::http_workload::collector_plan(),
                 })
                 .collect(),
             warmup_iterations: self.scenario.run.warmup_iterations,
@@ -78,6 +80,20 @@ impl LoadedScenario {
                 module: module.to_string_lossy().into_owned(),
                 working_directory_set: working_directory.is_some(),
                 inherited_environment_names: inherit_env.clone(),
+            },
+            Target::HttpWorkload {
+                fixture,
+                requests,
+                request_count,
+                concurrency,
+                request_timeout_seconds,
+            } => TargetEvidence::HttpWorkload {
+                request_count: *request_count,
+                endpoint_count: requests.len(),
+                concurrency: *concurrency,
+                request_timeout_seconds: *request_timeout_seconds,
+                fixture_program: fixture.program.clone(),
+                inherited_environment_names: fixture.inherit_env.clone(),
             },
         };
 
@@ -171,6 +187,10 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
             inherit_env,
             ..
         } => validate_browser_target(scenario, module, inherit_env),
+        Target::HttpWorkload { fixture, .. } => {
+            validate_inherit_env(&fixture.inherit_env)?;
+            crate::http_workload::validate_target(scenario)
+        }
     }
 }
 
@@ -196,8 +216,11 @@ fn validate_command_target(
     inherit_env: &[String],
 ) -> Result<()> {
     ensure!(
-        !scenario.collectors.contains(&Collector::BrowserChromium),
-        "browser-chromium requires a browser-journey target"
+        !scenario
+            .collectors
+            .iter()
+            .any(|collector| matches!(collector, Collector::BrowserChromium | Collector::HttpCurl)),
+        "browser-chromium and http-curl require their matching targets"
     );
     if scenario.collectors.contains(&Collector::NativePerf) {
         ensure!(

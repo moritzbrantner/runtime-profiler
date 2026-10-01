@@ -133,6 +133,12 @@ for every run; the CLI refuses to overwrite an existing one.
 
 ## Scenario
 
+Bounded local service workloads use an owned dynamic-port fixture and the
+`http-curl` collector. See [HTTP workloads](docs/http-workloads.md) and
+[`examples/http-workload.json`](examples/http-workload.json) for lifecycle,
+measurement bounds, and comparability. This collector records measurements;
+repositories and evaluators own load-test thresholds.
+
 ```yaml
 schema_version: runtime-profiler/scenario/v1
 id: example-command

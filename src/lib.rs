@@ -26,3 +26,4 @@ pub use hotspot_compare::{
 };
 pub use scenario::{LoadedScenario, load_scenario};
 pub use score::{RuntimeScoreDocument, score_bundles};
+pub mod http_workload;

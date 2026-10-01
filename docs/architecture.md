@@ -85,6 +85,15 @@ an unavailable collector must fail during planning rather than disappear from
 the evidence. Runtime-specific native artifacts remain optional sidecars while
 normalized summaries stay small and stable.
 
+The HTTP adapter uses curl's bounded parallel transfer engine rather than an
+embedded HTTP client or scheduler. Its foreground fixture owns an OS-assigned
+loopback port, published through a private control file. The profiler owns the
+fixture process group, health checks, and unconditional bounded teardown. This
+keeps ephemeral port bindings outside workload identity while preventing an
+implicit production endpoint. Numeric request samples and observer wall times
+are immutable evidence; request/response bodies and application logs are not
+bundle artifacts. See [HTTP workloads](http-workloads.md).
+
 Evaluator integrations are also adapters. They consume a supported profiler
 bundle version and emit their own neutral evaluation result; they do not move
 comparison policy into runtime-profiler.

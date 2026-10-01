@@ -29,6 +29,7 @@ export type BundleValidationReport = {
     hotspots: JsonRecord | null;
     chromium_trace_summary: JsonRecord | null;
     browser_runtime: JsonRecord | null;
+    http_workload?: JsonRecord | null;
     agent_guidance: JsonRecord | null;
   };
   limitations: string[];
@@ -57,6 +58,7 @@ const REQUIRED_DOCUMENT_ARTIFACTS = new Map([
   ["agent-guidance.json", "runtime-profiler/agent-guidance/v1"],
 ]);
 const OPTIONAL_DOCUMENT_ARTIFACTS = new Map([
+  ["http-workload.json", "runtime-profiler/http-workload/v1"],
   ["chromium-trace-summary.json", "runtime-profiler/chromium-trace-summary/v1"],
   ["browser-runtime.json", "runtime-profiler/browser-runtime/v1"],
 ]);
@@ -202,6 +204,7 @@ export async function validateBundleUrl(
       hotspots: documents["hotspots.json"] ?? null,
       chromium_trace_summary: documents["chromium-trace-summary.json"] ?? null,
       browser_runtime: documents["browser-runtime.json"] ?? null,
+      http_workload: documents["http-workload.json"] ?? null,
       agent_guidance: guidance,
     },
     limitations: [
@@ -263,7 +266,48 @@ export function validateDocuments(
 
   validateNativePerf(manifest, scenario ?? null, documents["hotspots.json"] ?? null, diagnostics);
   validateBrowserJourney(manifest, scenario ?? null, metrics ?? null, documents, diagnostics);
+  validateHttpWorkload(manifest, scenario ?? null, documents["http-workload.json"] ?? null, diagnostics);
   return diagnostics;
+}
+
+function validateHttpWorkload(
+  manifest: JsonRecord,
+  scenario: JsonRecord | null,
+  evidence: JsonRecord | null,
+  diagnostics: string[],
+): void {
+  const collectors = Array.isArray(scenario?.collectors) ? scenario.collectors : [];
+  const target = record(scenario?.target);
+  const present = hasArtifact(manifest, "http-workload.json");
+  if (!collectors.includes("http-curl")) {
+    if (present || target?.target_type === "http-workload") {
+      diagnostics.push("HTTP workload evidence requires the http-curl collector");
+    }
+    return;
+  }
+  if (collectors.length !== 1 || target?.target_type !== "http-workload" || !present || !evidence) {
+    diagnostics.push("HTTP workload is missing its target or measurement artifact");
+    return;
+  }
+  if (
+    evidence.scenario_id !== manifest.scenario_id ||
+    typeof evidence.collector_version !== "string" ||
+    !evidence.collector_version ||
+    typeof evidence.adapter_digest !== "string" ||
+    !/^[a-f0-9]{64}$/.test(evidence.adapter_digest) ||
+    evidence.overhead_status !== "not-isolated" ||
+    !Number.isInteger(evidence.concurrency) ||
+    evidence.concurrency < 1 || evidence.concurrency > 32 ||
+    evidence.concurrency !== target.concurrency ||
+    !Number.isInteger(evidence.request_count_per_iteration) ||
+    evidence.request_count_per_iteration < 1 || evidence.request_count_per_iteration > 1000 ||
+    evidence.request_count_per_iteration !== target.request_count ||
+    !Array.isArray(evidence.batches) || evidence.batches.length < 1 || evidence.batches.length > 10 ||
+    !Array.isArray(evidence.samples) || evidence.samples.length < 1 || evidence.samples.length > 10000 ||
+    evidence.samples.length !== evidence.batches.length * evidence.request_count_per_iteration
+  ) {
+    diagnostics.push("HTTP workload structure or collector identity is incomplete");
+  }
 }
 
 function validateNativePerf(

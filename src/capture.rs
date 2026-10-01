@@ -162,17 +162,34 @@ pub(crate) fn execute_prepared_command(
 ) -> Result<MeasurementSample> {
     prepare_target_environment(loaded, &mut command);
 
-    ensure_not_interrupted()?;
+    execute_isolated_command(
+        command,
+        iteration,
+        program_label,
+        Duration::from_secs(loaded.scenario.run.timeout_seconds),
+        true,
+    )
+}
+
+pub(crate) fn execute_isolated_command(
+    mut command: Command,
+    iteration: u32,
+    program_label: &str,
+    timeout: Duration,
+    interruptible: bool,
+) -> Result<MeasurementSample> {
+    if interruptible {
+        ensure_not_interrupted()?;
+    }
     let start = Instant::now();
     let mut child = command
         .spawn()
         .with_context(|| format!("failed to start target program: {program_label}"))?;
-    let timeout = Duration::from_secs(loaded.scenario.run.timeout_seconds);
     let mut max_observed_rss_kib = read_resident_memory_kib(child.id());
     let mut timed_out = false;
 
     let status = loop {
-        if interruption_received() {
+        if interruptible && interruption_received() {
             terminate_process(&mut child)?;
             child
                 .wait()
@@ -207,7 +224,7 @@ pub(crate) fn execute_prepared_command(
     ))
 }
 
-fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
+pub(crate) fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
     let (inherit_env, working_directory) = match &loaded.scenario.target {
         Target::Command {
             working_directory,
@@ -226,6 +243,13 @@ fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
             Some(resolve_browser_working_directory(
                 loaded,
                 working_directory.as_deref(),
+            )),
+        ),
+        Target::HttpWorkload { fixture, .. } => (
+            &fixture.inherit_env,
+            Some(resolve_browser_working_directory(
+                loaded,
+                fixture.working_directory.as_deref(),
             )),
         ),
     };
@@ -249,7 +273,7 @@ fn prepare_target_environment(loaded: &LoadedScenario, command: &mut Command) {
     command.process_group(0);
 }
 
-fn terminate_process(child: &mut Child) -> Result<()> {
+pub(crate) fn terminate_process(child: &mut Child) -> Result<()> {
     #[cfg(unix)]
     {
         let process_group = format!("-{}", child.id());
