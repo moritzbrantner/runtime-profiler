@@ -26,7 +26,7 @@ are never persisted. Fixture output is discarded.
 
 Publishing a port is followed by a bounded GET to `health_path`, requiring HTTP
 200. The fixture remains owned throughout warmup and measurement. The profiler
-terminates its process group and reaps it on success, startup or health failure,
+terminates its process group through rustix's safe native Unix signal API and reaps it on success, startup or health failure,
 measurement failure, batch timeout, or CLI interruption.
 
 An optional `fixture.teardown` command with `program` and `args` runs after group

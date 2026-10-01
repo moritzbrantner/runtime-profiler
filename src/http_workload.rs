@@ -366,11 +366,7 @@ impl OwnedFixture {
     fn stop(&mut self) -> Result<()> {
         if let Some(mut child) = self.child.take() {
             // Even when the group leader exited, terminate ordinary descendants.
-            if let Err(error) = terminate_process(&mut child) {
-                if child.try_wait()?.is_none() {
-                    return Err(error);
-                }
-            }
+            terminate_process(&mut child)?;
             child.wait().context("failed to reap HTTP fixture")?;
         }
         Ok(())
@@ -816,7 +812,8 @@ pub fn validate_evidence(
         (1..=10).contains(&iterations)
             && scenario.run.warmup_iterations <= 3
             && (1..=60).contains(&scenario.run.timeout_seconds)
-            && iterations * *request_count as usize <= 10_000
+            && (iterations + scenario.run.warmup_iterations as usize) * *request_count as usize
+                <= 10_000
             && evidence.batches.len() == iterations
             && evidence.samples.len() == iterations * *request_count as usize,
         "HTTP evidence request count mismatch"

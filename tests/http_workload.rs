@@ -393,6 +393,60 @@ fn rewrite_http_artifact(bundle: &Path, evidence: &Value) {
 }
 
 #[test]
+fn fixture_descendants_are_terminated_without_external_kill() {
+    use std::os::unix::fs::symlink;
+    use std::time::Duration;
+    let root = tempfile::tempdir().expect("temporary fixture");
+    let bin = root.path().join("bin");
+    fs::create_dir(&bin).expect("tool directory");
+    // Keep only curl in PATH. Fixture and descendant use explicit absolute programs.
+    let curl = Command::new("sh")
+        .args(["-c", "command -v curl"])
+        .output()
+        .expect("locate curl");
+    let curl = String::from_utf8(curl.stdout).expect("curl path");
+    symlink(curl.trim(), bin.join("curl")).expect("expose curl");
+    let python = Command::new("sh")
+        .args(["-c", "command -v python3"])
+        .output()
+        .expect("locate Python");
+    let python = String::from_utf8(python.stdout).expect("Python path");
+    let mut scenario = scenario(root.path(), "/", 200);
+    let fixture = FIXTURE.replace("server.serve_forever()", "import subprocess\nsubprocess.Popen(['/bin/sh', '-c', 'sleep 2; echo survived > descendant-survived'], env={'PATH': '/usr/bin:/bin'})\nserver.serve_forever()");
+    fs::write(root.path().join("fixture.py"), fixture).expect("descendant fixture");
+    scenario["target"]["fixture"]["program"] = json!(python.trim());
+    scenario["target"]["fixture"]["teardown"]["program"] = json!(python.trim());
+    fs::write(
+        root.path().join("scenario.json"),
+        serde_json::to_vec(&scenario).expect("scenario JSON"),
+    )
+    .expect("write scenario");
+    let output = Command::new(env!("CARGO_BIN_EXE_runtime-profiler"))
+        .current_dir(root.path())
+        .env("PATH", &bin)
+        .args([
+            "capture",
+            "--scenario",
+            "scenario.json",
+            "--output",
+            "bundle",
+        ])
+        .output()
+        .expect("capture without kill");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    std::thread::sleep(Duration::from_millis(2200));
+    assert!(
+        !root.path().join("descendant-survived").exists(),
+        "ordinary fixture descendants must be terminated"
+    );
+    assert_stopped(root.path());
+}
+
+#[test]
 fn dynamic_ports_compare_but_collector_changes_and_forged_metrics_do_not() {
     let root = tempfile::tempdir().expect("temporary fixture");
     let scenario = scenario(root.path(), "/", 200);
@@ -444,5 +498,78 @@ fn dynamic_ports_compare_but_collector_changes_and_forged_metrics_do_not() {
         !runtime_profiler::validate_bundle(&candidate)
             .expect("validate empty evidence without panic")
             .valid
+    );
+}
+
+#[test]
+fn evidence_validation_counts_warmups_toward_total_request_limit() {
+    use runtime_profiler::contract::TargetEvidence;
+    use runtime_profiler::http_workload::{
+        HttpBatch, HttpEvidence, HttpSample, metrics_from_evidence, validate_evidence,
+    };
+    let root = tempfile::tempdir().expect("temporary fixture");
+    let scenario = scenario(root.path(), "/", 200);
+    let path = root.path().join("scenario.json");
+    fs::write(
+        &path,
+        serde_json::to_vec(&scenario).expect("serialize scenario"),
+    )
+    .expect("write scenario");
+    let mut scenario = runtime_profiler::load_scenario(&path)
+        .expect("valid scenario")
+        .evidence();
+    scenario.run.warmup_iterations = 3;
+    scenario.run.measurement_iterations = 10;
+    let TargetEvidence::HttpWorkload {
+        request_count,
+        endpoint_count,
+        concurrency,
+        ..
+    } = &mut scenario.target
+    else {
+        panic!("HTTP target expected");
+    };
+    *request_count = 1000;
+    *endpoint_count = 1;
+    *concurrency = 1;
+    let evidence = HttpEvidence {
+        schema_version: "runtime-profiler/http-workload/v1".to_owned(),
+        scenario_id: scenario.id.clone(),
+        collector_version: "curl 8.4.0 synthetic contract fixture".to_owned(),
+        adapter_digest: "a".repeat(64),
+        concurrency: 1,
+        request_count_per_iteration: 1000,
+        fixture_setup_ms: 1.0,
+        fixture_teardown_ms: 1.0,
+        collector_wall_time_ms: 1000.0,
+        overhead_status: "not-isolated".to_owned(),
+        batches: (0..10)
+            .map(|iteration| HttpBatch {
+                iteration,
+                wall_time_ms: 100.0,
+            })
+            .collect(),
+        samples: (0..10000)
+            .map(|index| HttpSample {
+                iteration: index / 1000,
+                request_index: index % 1000,
+                endpoint_index: 0,
+                status_code: 200,
+                expected_status: 200,
+                curl_exit_code: 0,
+                duration_ms: 1.0,
+                response_bytes: 1,
+                succeeded: true,
+            })
+            .collect(),
+    };
+    assert!(
+        validate_evidence(&scenario, &evidence, &metrics_from_evidence(&evidence)).is_err(),
+        "13000 total requests must be rejected even when only 10000 are measured"
+    );
+    scenario.run.warmup_iterations = 0;
+    assert!(
+        validate_evidence(&scenario, &evidence, &metrics_from_evidence(&evidence)).is_ok(),
+        "the exact 10000 total-request limit remains supported"
     );
 }

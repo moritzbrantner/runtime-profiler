@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 
 #[cfg(unix)]
 use signal_hook::consts::signal::{SIGHUP, SIGINT, SIGTERM};
@@ -276,19 +276,25 @@ pub(crate) fn prepare_target_environment(loaded: &LoadedScenario, command: &mut 
 pub(crate) fn terminate_process(child: &mut Child) -> Result<()> {
     #[cfg(unix)]
     {
-        let process_group = format!("-{}", child.id());
-        let group_kill = Command::new("kill")
-            .args(["-KILL", "--", &process_group])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        if matches!(group_kill, Ok(status) if status.success()) {
-            return Ok(());
+        use rustix::process::{Pid, Signal, kill_process_group};
+        let raw_pid = i32::try_from(child.id()).context("target process ID exceeds OS bounds")?;
+        let pid = Pid::from_raw(raw_pid).context("invalid target process-group ID")?;
+        ensure!(raw_pid > 1, "refusing to signal a reserved process group");
+        match kill_process_group(pid, Signal::KILL) {
+            Ok(()) => Ok(()),
+            Err(rustix::io::Errno::SRCH) => Ok(()),
+            Err(error) => {
+                // Direct cleanup is best effort; group failure still prevents evidence.
+                let _ = child.kill();
+                let _ = child.wait();
+                Err(error).context("failed to terminate target process group")
+            }
         }
     }
-
-    child.kill().context("failed to terminate target process")
+    #[cfg(not(unix))]
+    {
+        child.kill().context("failed to terminate target process")
+    }
 }
 
 fn resolve_working_directory(
