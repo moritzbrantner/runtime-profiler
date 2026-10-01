@@ -54,6 +54,7 @@ jobs:
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # immutable action revision
         with:
           toolchain: "1.98.0"
+          components: rustfmt, clippy
 
       - name: Install contract validation dependencies
         run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
