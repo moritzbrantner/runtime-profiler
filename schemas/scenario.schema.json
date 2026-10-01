@@ -297,6 +297,22 @@
           "maxLength": 65536
         },
         "content_type": { "type": ["string", "null"], "minLength": 3, "maxLength": 128, "pattern": "^[ -~]+$" },
+        "headers": {
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "pattern": "^[ -~]+$"
+          }
+        },
         "expected_status": {
           "type": "integer",
           "minimum": 100,

@@ -1,6 +1,6 @@
 //! Bounded loopback HTTP evidence, using curl's transfer engine and owned fixtures.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::Read;
 use std::path::Path;
@@ -155,6 +155,7 @@ pub fn validate_target(scenario: &Scenario) -> Result<()> {
             "unsupported HTTP method"
         );
         validate_path(&request.path)?;
+        validate_headers(&request.headers)?;
         ensure!(
             (100..=599).contains(&request.expected_status),
             "expected_status must be between 100 and 599"
@@ -180,6 +181,52 @@ pub fn validate_target(scenario: &Scenario) -> Result<()> {
                         .bytes()
                         .all(|byte| byte.is_ascii_graphic() || byte == b' ')),
             "invalid bounded HTTP content type"
+        );
+    }
+    Ok(())
+}
+
+fn validate_headers(headers: &BTreeMap<String, String>) -> Result<()> {
+    ensure!(
+        headers.len() <= 16,
+        "HTTP requests permit at most 16 headers"
+    );
+    let mut names = BTreeSet::new();
+    for (name, value) in headers {
+        ensure!(
+            (1..=64).contains(&name.len())
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte)),
+            "invalid bounded HTTP header name"
+        );
+        let normalized = name.to_ascii_lowercase();
+        ensure!(
+            names.insert(normalized.clone()),
+            "duplicate HTTP header name"
+        );
+        ensure!(
+            !matches!(
+                normalized.as_str(),
+                "host"
+                    | "content-length"
+                    | "transfer-encoding"
+                    | "connection"
+                    | "te"
+                    | "trailer"
+                    | "upgrade"
+                    | "expect"
+                    | "content-type"
+            ),
+            "HTTP routing, framing, and content-type headers are collector-controlled"
+        );
+        ensure!(
+            (1..=2048).contains(&value.len())
+                && !value.trim().is_empty()
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_graphic() || byte == b' '),
+            "invalid bounded HTTP header value"
         );
     }
     Ok(())
@@ -410,6 +457,7 @@ pub fn capture_http(loaded: &LoadedScenario) -> Result<(MetricsDocument, HttpEvi
             path: fixture.health_path.clone(),
             body: None,
             content_type: None,
+            headers: BTreeMap::new(),
             expected_status: 200,
         };
         loop {
@@ -546,6 +594,12 @@ fn capture_batch(
             config.push_str(&format!(
                 "header = {}\n",
                 quoted(&format!("Content-Type: {content_type}"))
+            ));
+        }
+        for (name, value) in &request.headers {
+            config.push_str(&format!(
+                "header = {}\n",
+                quoted(&format!("{name}: {value}"))
             ));
         }
         if let Some(body) = &request.body {

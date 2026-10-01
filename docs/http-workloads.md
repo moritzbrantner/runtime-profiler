@@ -43,7 +43,14 @@ separate roadmap work.
 Each batch cycles through 1–32 declared requests in order. Each request names a
 GET, HEAD, POST, PUT, PATCH, or DELETE method, an origin path of at most 2,048 ASCII
 bytes, an expected status from 100–599, and an optional body of at most 65,536
-UTF-8 bytes, plus an optional bounded `content_type`. Bodies without an explicit
+UTF-8 bytes, plus an optional bounded `content_type`. Optional `headers` supply
+at most 16 unique case-insensitive names (1–64 HTTP token bytes), each with a
+nonblank printable ASCII value of at most 2,048 bytes. Routing/framing headers
+(`Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `TE`, `Trailer`,
+`Upgrade`, `Expect`) remain collector-controlled; use `content_type` for
+`Content-Type`. Header names and values enter only the workload digest and
+private curl configuration, never captured evidence. Store only disposable
+fixture identities in scenario files, never production credentials. Bodies without an explicit
 content type use curl's default media type. HEAD bodies, URL authorities, fragments, and backslashes are rejected.
 Bodies use curl's binary transfer support. No redirects, retries, user curlrc,
 or environment proxies participate. Response bodies are discarded and each
@@ -63,7 +70,7 @@ Warmup and health requests are excluded from `metrics.json` and
 Success and error rates use all measured transfers. Throughput is completed
 requests divided by collector batch wall time, including curl startup and polling;
 it is not a service capacity claim. `http-workload.json` retains bounded numeric
-samples and batch wall times without URLs, request bodies, response bodies, or
+samples and batch wall times without URLs, request headers, request bodies, response bodies, or
 application logs. Normalized metrics are reconstructed and checked against this
 artifact during bundle validation, using exact floating-point JSON round trips.
 

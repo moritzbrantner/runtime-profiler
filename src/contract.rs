@@ -89,6 +89,8 @@ pub struct HttpRequest {
     pub body: Option<String>,
     #[serde(default)]
     pub content_type: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
     pub expected_status: u16,
 }
 
