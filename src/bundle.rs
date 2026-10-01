@@ -37,7 +37,8 @@ const REQUIRED_ARTIFACTS: [(&str, &str); 5] = [
     ("hotspots.json", "application/json"),
     ("agent-guidance.json", "application/json"),
 ];
-const OPTIONAL_ARTIFACTS: [(&str, &str); 4] = [
+const OPTIONAL_ARTIFACTS: [(&str, &str); 5] = [
+    (crate::http_workload::ARTIFACT, "application/json"),
     (RAW_REPORT_ARTIFACT, RAW_REPORT_MEDIA_TYPE),
     (RAW_TRACE_ARTIFACT, RAW_TRACE_MEDIA_TYPE),
     (TRACE_SUMMARY_ARTIFACT, TRACE_SUMMARY_MEDIA_TYPE),
@@ -68,14 +69,21 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     let environment = detect_environment()?;
     ensure_not_interrupted()?;
 
-    let metrics = match scenario.scenario.target {
-        Target::Command { .. } => capture_metrics(&scenario)?,
-        Target::BrowserJourney { .. } => MetricsDocument {
-            schema_version: METRICS_SCHEMA_V1.to_owned(),
-            scenario_id: scenario.scenario.id.clone(),
-            samples: Vec::new(),
-            metrics: Vec::new(),
-        },
+    let (metrics, http_capture) = match scenario.scenario.target {
+        Target::Command { .. } => (capture_metrics(&scenario)?, None),
+        Target::HttpWorkload { .. } => {
+            let (metrics, evidence) = crate::http_workload::capture_http(&scenario)?;
+            (metrics, Some(evidence))
+        }
+        Target::BrowserJourney { .. } => (
+            MetricsDocument {
+                schema_version: METRICS_SCHEMA_V1.to_owned(),
+                scenario_id: scenario.scenario.id.clone(),
+                samples: Vec::new(),
+                metrics: Vec::new(),
+            },
+            None,
+        ),
     };
     ensure_not_interrupted()?;
 
@@ -138,6 +146,9 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     write_json(&output.join("metrics.json"), &metrics)?;
     write_json(&output.join("hotspots.json"), &hotspots)?;
     write_json(&output.join("agent-guidance.json"), &guidance)?;
+    if let Some(evidence) = &http_capture {
+        write_json(&output.join(crate::http_workload::ARTIFACT), evidence)?;
+    }
     if let Some(report) = &raw_native_perf_report {
         fs::write(output.join(RAW_REPORT_ARTIFACT), report).with_context(|| {
             format!(
@@ -158,7 +169,8 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     }
     ensure_not_interrupted()?;
 
-    let optional_count = usize::from(raw_native_perf_report.is_some())
+    let optional_count = usize::from(http_capture.is_some())
+        + usize::from(raw_native_perf_report.is_some())
         + if browser_capture.is_some() { 3 } else { 0 };
     let mut files = Vec::with_capacity(REQUIRED_ARTIFACTS.len() + optional_count);
     for (path, media_type) in REQUIRED_ARTIFACTS {
@@ -191,6 +203,13 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
             output,
             BROWSER_RUNTIME_ARTIFACT,
             BROWSER_RUNTIME_MEDIA_TYPE,
+        )?);
+    }
+    if http_capture.is_some() {
+        files.push(artifact_entry(
+            output,
+            crate::http_workload::ARTIFACT,
+            "application/json",
         )?);
     }
     ensure_not_interrupted()?;
@@ -321,6 +340,25 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
     }
     validate_hotspot_artifacts(&scenario, &manifest, &hotspots, &mut diagnostics);
     validate_browser_artifacts(bundle, &scenario, &manifest, &metrics, &mut diagnostics)?;
+    let http_present = manifest
+        .files
+        .iter()
+        .any(|artifact| artifact.path == crate::http_workload::ARTIFACT);
+    if scenario.collectors.contains(&Collector::HttpCurl) {
+        if !http_present {
+            diagnostics.push("HTTP workload is missing its measurement artifact".to_owned());
+        } else {
+            let evidence: crate::http_workload::HttpEvidence =
+                read_json(&bundle.join(crate::http_workload::ARTIFACT))?;
+            if let Err(error) =
+                crate::http_workload::validate_evidence(&scenario, &evidence, &metrics)
+            {
+                diagnostics.push(format!("invalid HTTP workload evidence: {error}"));
+            }
+        }
+    } else if http_present || matches!(scenario.target, TargetEvidence::HttpWorkload { .. }) {
+        diagnostics.push("HTTP workload evidence requires the http-curl collector".to_owned());
+    }
 
     Ok(ValidationReport {
         schema_version: "runtime-profiler/validation/v1".to_owned(),

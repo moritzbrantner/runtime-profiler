@@ -165,6 +165,9 @@ function targetDetail(target: unknown): string | null {
   const value = target as JsonRecord;
   if (value.target_type === "browser-journey") return stringOrNull(value.module);
   if (value.target_type === "command") return stringOrNull(value.program);
+  if (value.target_type === "http-workload") {
+    return stringOrNull(value.fixture_program);
+  }
   return null;
 }
 

@@ -79,9 +79,9 @@ read resident memory from `/proc/self/status`; their absence from the process
 collector's measurement list means RSS collection is unsupported in the current
 environment.
 On Unix, each workload starts in its own process group so timeout termination
-also reaches ordinary descendants in that group. If group termination is not
-available, the collector falls back to terminating the direct child and does
-not claim stronger descendant-cleanup guarantees for that platform. The
+also reaches ordinary descendants in that group. Unix group termination uses the safe native rustix process API and is independent
+of PATH. Group-signaling errors fail capture. Other platforms terminate only the
+direct child and do not claim descendant-cleanup guarantees. The
 short-lived CLI installs interruption handling for its process lifetime so it
 can terminate and reap that group before exiting; library callers retain
 ownership of their embedding process's signal policy.
@@ -132,6 +132,12 @@ The first capture creates an immutable directory. Choose a new output directory
 for every run; the CLI refuses to overwrite an existing one.
 
 ## Scenario
+
+Bounded local service workloads use an owned dynamic-port fixture and the
+`http-curl` collector. See [HTTP workloads](docs/http-workloads.md) and
+[`examples/http-workload.json`](examples/http-workload.json) for lifecycle,
+measurement bounds, and comparability. This collector records measurements;
+repositories and evaluators own load-test thresholds.
 
 ```yaml
 schema_version: runtime-profiler/scenario/v1

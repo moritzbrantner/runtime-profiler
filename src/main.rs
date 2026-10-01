@@ -218,6 +218,10 @@ fn detect() -> DetectionReport {
         runtime_profiler::browser_chromium::COLLECTOR_ID.to_owned(),
         runtime_profiler::browser_chromium::detect_browser_chromium(),
     );
+    collectors.insert(
+        "http-curl".to_owned(),
+        runtime_profiler::http_workload::detect_http_curl(),
+    );
 
     DetectionReport {
         schema_version: "runtime-profiler/detection/v1".to_owned(),

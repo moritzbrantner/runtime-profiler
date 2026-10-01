@@ -66,6 +66,24 @@ test("browser validator rejects partial native toolchain identity", async () => 
   );
 });
 
+test("browser validator accepts bounded HTTP evidence and rejects a missing sidecar", async () => {
+  const fixture = await bundleFixture({ http: true });
+  const report = await validateBundleUrl(manifestUrl, {
+    fetchImpl: fakeFetch(fixture.responses), cryptoImpl: webcrypto,
+  });
+  assert.equal(report.valid, true);
+  assert.equal(report.verified_files, 6);
+  assert.equal(report.evidence.http_workload.concurrency, 1);
+  const manifest = JSON.parse(fixture.responses.get(manifestUrl));
+  manifest.files = manifest.files.filter((artifact) => artifact.path !== "http-workload.json");
+  fixture.responses.set(manifestUrl, JSON.stringify(manifest));
+  const missing = await validateBundleUrl(manifestUrl, {
+    fetchImpl: fakeFetch(fixture.responses), cryptoImpl: webcrypto,
+  });
+  assert.equal(missing.valid, false);
+  assert.ok(missing.diagnostics.includes("HTTP workload is missing its target or measurement artifact"));
+});
+
 test("browser validator reports artifact corruption", async () => {
   const fixture = await bundleFixture();
   fixture.responses.set(
@@ -95,6 +113,7 @@ async function bundleFixture({
   nativePerf = false,
   partialToolchain = false,
   browser = false,
+  http = false,
 } = {}) {
   const nativeHotspots = nativePerf
     ? {
@@ -260,6 +279,20 @@ async function bundleFixture({
   }
 
   const responses = new Map();
+  if (http) {
+    scenario.target = { target_type: "http-workload", fixture_program: "python3", request_count: 1, endpoint_count: 1, concurrency: 1, request_timeout_seconds: 1 };
+    scenario.collectors = ["http-curl"];
+    metrics.metrics[0].id = "http.latency";
+    metrics.samples[0].max_rss_kib = null;
+    documents["http-workload.json"] = {
+      schema_version: "runtime-profiler/http-workload/v1", scenario_id: "example",
+      collector_version: "curl 8.4.0 fixture", adapter_digest: "a".repeat(64),
+      concurrency: 1, request_count_per_iteration: 1,
+      fixture_setup_ms: 1, fixture_teardown_ms: 1, collector_wall_time_ms: 20,
+      overhead_status: "not-isolated", batches: [{ iteration: 0, wall_time_ms: 20 }],
+      samples: [{ iteration: 0, request_index: 0, endpoint_index: 0, status_code: 200, expected_status: 200, curl_exit_code: 0, duration_ms: 10, response_bytes: 16, succeeded: true }],
+    };
+  }
   const files = [];
   for (const [path, document] of Object.entries(documents)) {
     const text = `${JSON.stringify(document)}\n`;

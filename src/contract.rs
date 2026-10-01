@@ -47,6 +47,49 @@ pub enum Target {
         #[serde(default)]
         inherit_env: Vec<String>,
     },
+    HttpWorkload {
+        fixture: HttpFixture,
+        requests: Vec<HttpRequest>,
+        request_count: u32,
+        concurrency: u32,
+        request_timeout_seconds: u64,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct FixtureCommand {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HttpFixture {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub working_directory: Option<PathBuf>,
+    #[serde(default)]
+    pub inherit_env: Vec<String>,
+    pub health_path: String,
+    pub startup_timeout_seconds: u64,
+    #[serde(default)]
+    pub teardown: Option<FixtureCommand>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HttpRequest {
+    pub method: String,
+    pub path: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub content_type: Option<String>,
+    pub expected_status: u16,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -92,6 +135,7 @@ pub enum Collector {
     Process,
     NativePerf,
     BrowserChromium,
+    HttpCurl,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -141,6 +185,14 @@ pub enum TargetEvidence {
     BrowserJourney {
         module: String,
         working_directory_set: bool,
+        inherited_environment_names: Vec<String>,
+    },
+    HttpWorkload {
+        request_count: u32,
+        endpoint_count: usize,
+        concurrency: u32,
+        request_timeout_seconds: u64,
+        fixture_program: String,
         inherited_environment_names: Vec<String>,
     },
 }

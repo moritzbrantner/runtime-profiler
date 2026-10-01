@@ -16,14 +16,15 @@
     "target": {
       "oneOf": [
         { "$ref": "#/$defs/commandTarget" },
-        { "$ref": "#/$defs/browserJourneyTarget" }
+        { "$ref": "#/$defs/browserJourneyTarget" },
+        { "$ref": "#/$defs/httpWorkloadTarget" }
       ]
     },
     "run": { "$ref": "#/$defs/run" },
     "collectors": {
       "type": "array",
       "minItems": 1,
-      "items": { "enum": ["process", "native-perf", "browser-chromium"] },
+      "items": { "enum": ["process", "native-perf", "browser-chromium", "http-curl"] },
       "default": ["process"]
     }
   },
@@ -72,7 +73,69 @@
         "properties": {
           "collectors": {
             "type": "array",
-            "items": { "enum": ["process", "native-perf"] }
+            "items": { "enum": ["process", "native-perf", "http-curl"] }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "type": {
+                "const": "http-workload"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "required": [
+          "target"
+        ]
+      },
+      "then": {
+        "required": [
+          "collectors"
+        ],
+        "properties": {
+          "collectors": {
+            "const": [
+              "http-curl"
+            ]
+          },
+          "run": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/run"
+              },
+              {
+                "properties": {
+                  "warmup_iterations": {
+                    "maximum": 3
+                  },
+                  "measurement_iterations": {
+                    "maximum": 10
+                  },
+                  "timeout_seconds": {
+                    "maximum": 60
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "collectors": {
+            "items": {
+              "not": {
+                "const": "http-curl"
+              }
+            }
           }
         }
       }
@@ -115,6 +178,172 @@
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
           "default": []
+        }
+      }
+    },
+    "fixtureCommand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "program"
+      ],
+      "properties": {
+        "program": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "args": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "default": []
+        }
+      }
+    },
+    "httpFixture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "program",
+        "health_path",
+        "startup_timeout_seconds"
+      ],
+      "properties": {
+        "program": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "args": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "default": []
+        },
+        "working_directory": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "inherit_env": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        },
+        "health_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^/(?!/)(?!.*[#\\\\])[!-~]*$"
+        },
+        "startup_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "teardown": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/fixtureCommand"
+            }
+          ]
+        }
+      }
+    },
+    "httpRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "path",
+        "expected_status"
+      ],
+      "properties": {
+        "method": {
+          "enum": [
+            "GET",
+            "HEAD",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^/(?!/)(?!.*[#\\\\])[!-~]*$"
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 65536
+        },
+        "content_type": { "type": ["string", "null"], "minLength": 3, "maxLength": 128, "pattern": "^[ -~]+$" },
+        "expected_status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        }
+      }
+    },
+    "httpWorkloadTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "fixture",
+        "requests",
+        "request_count",
+        "concurrency",
+        "request_timeout_seconds"
+      ],
+      "properties": {
+        "type": {
+          "const": "http-workload"
+        },
+        "fixture": {
+          "$ref": "#/$defs/httpFixture"
+        },
+        "requests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/httpRequest"
+          }
+        },
+        "request_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "request_timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
         }
       }
     },

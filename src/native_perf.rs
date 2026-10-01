@@ -764,7 +764,7 @@ fn source_root(loaded: &LoadedScenario) -> Option<PathBuf> {
             ..
         } => Some(scenario_directory.join(directory)),
         Target::Command { .. } => Some(scenario_directory.to_path_buf()),
-        Target::BrowserJourney { .. } => None,
+        Target::BrowserJourney { .. } | Target::HttpWorkload { .. } => None,
     }
 }
 
