@@ -72,7 +72,9 @@ First canary candidates spanning different workload shapes: `rect` (JavaScript/T
 
 ## Minimal examples
 
-Run `cargo run -- detect` and `cargo run -- plan --scenario <path>` before capturing. `detect` reports which collectors are implemented and usable on the current host.
+The examples assume scenario files live in `profiles/runtime-profiler/`. Relative `working_directory` values resolve from the scenario file's directory, so `../..` selects the repository root.
+
+Run `cargo run -- detect` and `cargo run -- plan --scenario <path>` before capturing. `detect` reports which collectors are implemented and which host prerequisites it can verify. It cannot verify everything: `browser-chromium` checks only for Node, while Playwright and Chromium in the consumer working directory are checked at capture time.
 
 ### Rust / native command
 
@@ -83,6 +85,7 @@ target:
   type: command
   program: ./target/release/kernel-bench
   args: ["--fixture", "fixtures/small.bin"]
+  working_directory: ../..
 run:
   warmup_iterations: 1
   measurement_iterations: 5
@@ -101,8 +104,8 @@ schema_version: runtime-profiler/scenario/v1
 id: dashboard-filter-v1
 target:
   type: browser-journey
-  module: profiles/dashboard-filter.mjs
-  working_directory: ..
+  module: profiles/runtime-profiler/dashboard-filter.mjs
+  working_directory: ../..
   inherit_env: []
 run:
   warmup_iterations: 0
@@ -125,7 +128,7 @@ The journey module exports `run({ page })` and connects to its own deterministic
     "fixture": {
       "program": "dotnet",
       "args": ["run", "--no-build", "--configuration", "Release", "--project", "src/Orders.Api"],
-      "working_directory": "..",
+      "working_directory": "../..",
       "health_path": "/health",
       "startup_timeout_seconds": 30
     },
@@ -175,7 +178,7 @@ Every bundle records the source revision separately from a privacy-preserving en
 - **Unavailable**: the adapter exists but the host cannot run it (for example `perf` missing or recording denied). `detect` and `plan` report this explicitly.
 - **Missing**: evidence that should exist for an applicable scenario was not captured or does not validate.
 
-None of these is a pass. Absent evidence means "not measured" or "not comparable", never green.
+runtime-profiler reports these states descriptively and never substitutes a measurement for them. Whether an absent, unavailable, or incomparable result is advisory, blocking, or inapplicable is decided by the evaluator or repository policy.
 
 ## Baseline and retention rules
 
