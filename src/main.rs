@@ -107,25 +107,25 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Detect => print_json(&detect()),
+        Commands::Detect => print_json(&detect())?,
         Commands::Plan { scenario } => {
             let loaded = load_scenario(&scenario)?;
-            print_json(&loaded.plan());
+            print_json(&loaded.plan())?;
         }
         Commands::Capture { scenario, output } => {
             install_cli_interruption_handlers()?;
             let manifest = capture_bundle(&scenario, &output)?;
-            print_json(&manifest);
+            print_json(&manifest)?;
         }
         Commands::Validate { bundle } => {
             let report = validate_bundle(&bundle)?;
-            print_json(&report);
+            print_json(&report)?;
             ensure!(report.valid, "bundle validation failed");
         }
         Commands::Summarize { bundle, json } => {
             let metrics = summarize_bundle(&bundle)?;
             if json {
-                print_json(&metrics);
+                print_json(&metrics)?;
             } else {
                 print_summary(&metrics);
             }
@@ -137,7 +137,7 @@ fn main() -> Result<()> {
         } => {
             let score = score_bundles(&reference, &candidate)?;
             if json {
-                print_json(&score);
+                print_json(&score)?;
             } else {
                 print_score(&score);
             }
@@ -149,7 +149,7 @@ fn main() -> Result<()> {
         } => {
             let report = compare_hotspot_bundles(&reference, &candidate)?;
             if json {
-                print_json(&report);
+                print_json(&report)?;
             } else {
                 print_hotspot_comparability(&report);
             }
@@ -161,7 +161,7 @@ fn main() -> Result<()> {
         } => {
             let report = compare_browser_bundles(&reference, &candidate)?;
             if json {
-                print_json(&report);
+                print_json(&report)?;
             } else {
                 print_browser_comparability(&report);
             }
@@ -169,7 +169,7 @@ fn main() -> Result<()> {
         Commands::AnalyzeChromiumTrace { trace, json } => {
             let summary = analyze_chromium_trace(&trace)?;
             if json {
-                print_json(&summary);
+                print_json(&summary)?;
             } else {
                 print_chromium_trace_summary(&summary);
             }
@@ -189,7 +189,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::EvidenceReference { bundle, uri } => {
-            print_json(&build_agent_evidence_reference(&bundle, uri)?);
+            print_json(&build_agent_evidence_reference(&bundle, uri)?)?;
         }
     }
     Ok(())
@@ -256,11 +256,9 @@ fn program_available(program: &str) -> bool {
         .is_ok()
 }
 
-fn print_json<T: serde::Serialize>(value: &T) {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).expect("serializable CLI response")
-    );
+fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
 }
 
 fn print_summary(metrics: &MetricsDocument) {
