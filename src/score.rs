@@ -73,6 +73,19 @@ pub fn score_bundles(reference: &Path, candidate: &Path) -> Result<RuntimeScoreD
     validate(reference, "reference")?;
     validate(candidate, "candidate")?;
 
+    let http_path = crate::http_workload::ARTIFACT;
+    if reference.join(http_path).exists() || candidate.join(http_path).exists() {
+        let reference_http: crate::http_workload::HttpEvidence =
+            read_json(&reference.join(http_path))?;
+        let candidate_http: crate::http_workload::HttpEvidence =
+            read_json(&candidate.join(http_path))?;
+        ensure!(
+            reference_http.collector_version == candidate_http.collector_version
+                && reference_http.adapter_digest == candidate_http.adapter_digest,
+            "HTTP comparison requires identical curl and collector adapter identities"
+        );
+    }
+
     let reference_manifest: BundleManifest = read_json(&reference.join("manifest.json"))?;
     let candidate_manifest: BundleManifest = read_json(&candidate.join("manifest.json"))?;
     ensure!(
@@ -115,7 +128,7 @@ pub fn score_bundles(reference: &Path, candidate: &Path) -> Result<RuntimeScoreD
         notes: vec![
             "The score is reference-relative: 100 means the candidate meets or beats the reference on the scored runtime evidence.".to_owned(),
             "Positive change_percent values are improvements and negative values are regressions; improvements remain visible even though component scores are capped at 100.".to_owned(),
-            "Wall-time and memory-like metrics score median and p95 behavior; process.success_rate scores its mean so intermittent failures stay visible.".to_owned(),
+            "Wall-time and memory-like metrics score median and p95 behavior; process.success_rate and HTTP success/error rates score their means so intermittent failures stay visible.".to_owned(),
             "Only bundles with identical scenario and environment fingerprints are comparable; the process.max_rss compatibility alias is never double-weighted.".to_owned(),
         ],
     })
@@ -166,7 +179,10 @@ fn score_metrics(
             "metric {id} preferred direction differs"
         );
 
-        let statistics = if id == "process.success_rate" {
+        let statistics = if matches!(
+            id.as_str(),
+            "process.success_rate" | "http.success_rate" | "http.error_rate"
+        ) {
             vec![score_statistic(
                 "mean",
                 reference_metric.statistics.mean,

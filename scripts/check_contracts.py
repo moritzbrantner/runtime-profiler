@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 from jsonschema import Draft202012Validator, FormatChecker
+from referencing import Registry, Resource
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -46,6 +47,36 @@ def check_example() -> None:
     assert scenario["target"]["type"] == "command"
     assert scenario["collectors"] == ["process"]
     assert scenario["run"]["measurement_iterations"] > 0
+
+
+def check_http_example() -> None:
+    schemas = [load_json(path) for path in SCHEMAS.glob("*.schema.json")]
+    registry = Registry().with_resources(
+        (schema["$id"], Resource.from_contents(schema)) for schema in schemas
+    )
+    schema = load_json(SCHEMAS / "scenario.schema.json")
+    validator = Draft202012Validator(schema, registry=registry)
+    example = load_json(ROOT / "examples" / "http-workload.json")
+    validator.validate(example)
+    assert example["collectors"] == ["http-curl"]
+    for count in [0, 1001]:
+        invalid = {**example, "target": {**example["target"], "request_count": count}}
+        assert not validator.is_valid(invalid), "HTTP request counts must be bounded"
+    request = example["target"]["requests"][0]
+    declared = {**example, "target": {**example["target"], "requests": [
+        {**request, "headers": {"x-app-id": "fixture-app"}}
+    ]}}
+    validator.validate(declared)
+    for headers in [{"x-app-id": " "}, {"bad name": "value"},
+                    {"x-app-id": "value\r\nInjected: true"},
+                    {"x-app-id": "x" * 2049},
+                    {f"x-{index}": "value" for index in range(17)}]:
+        invalid = {**example, "target": {**example["target"], "requests": [
+            {**request, "headers": headers}
+        ]}}
+        assert not validator.is_valid(invalid), "HTTP header schema must enforce bounds"
+    invalid = {**example, "collectors": ["process"]}
+    assert not validator.is_valid(invalid), "HTTP requires its own collector"
 
 
 def agent_evidence_validator() -> Draft202012Validator:
@@ -117,6 +148,10 @@ def check_required_files() -> None:
         "schemas/chromium-trace-summary.schema.json",
         "schemas/browser-runtime.schema.json",
         "schemas/agent-guidance.schema.json",
+        "schemas/http-workload.schema.json",
+        "examples/http-workload.json",
+        "examples/http-fixture.py",
+        "docs/http-workloads.md",
     }
     missing = sorted(path for path in required if not (ROOT / path).is_file())
     assert not missing, f"missing required files: {', '.join(missing)}"
@@ -141,6 +176,7 @@ def main() -> None:
     for name in ["environment.schema.json", "bundle-manifest.schema.json"]:
         check_fingerprint_schema_version(SCHEMAS / name)
     check_example()
+    check_http_example()
     check_agent_evidence_contract(args.evidence_reference)
     check_required_files()
     print(f"contract checks passed ({len(schema_paths)} native schemas + agent.evidence/v1)")

@@ -1,0 +1,20 @@
+{
+  "schema_version": "runtime-profiler/scenario/v1",
+  "id": "owned-http-fixture",
+  "target": {
+    "type": "http-workload",
+    "fixture": {
+      "program": "python3",
+      "args": ["http-fixture.py"],
+      "working_directory": ".",
+      "health_path": "/health",
+      "startup_timeout_seconds": 5
+    },
+    "requests": [{ "method": "GET", "path": "/items", "expected_status": 200 }],
+    "request_count": 8,
+    "concurrency": 2,
+    "request_timeout_seconds": 2
+  },
+  "run": { "warmup_iterations": 1, "measurement_iterations": 2, "timeout_seconds": 10 },
+  "collectors": ["http-curl"]
+}
