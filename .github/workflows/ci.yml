@@ -17,7 +17,7 @@ jobs:
     name: Deterministic Findings
     permissions:
       contents: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@8669e7cad2233c0fb1e0fcc3e00a041d2b6d7b03
+    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@159701da0842f885d786fc8109c1de32f7dc0128
     with:
       operation: findings
       report_path: .artifacts/coding-tooling/findings.json
@@ -26,7 +26,7 @@ jobs:
     name: Coding Tooling Fast
     permissions:
       contents: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@8669e7cad2233c0fb1e0fcc3e00a041d2b6d7b03
+    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@159701da0842f885d786fc8109c1de32f7dc0128
     with:
       operation: run
       tier: fast
