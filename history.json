@@ -2125,6 +2125,75 @@
         }
       ],
       "reason": null
+    },
+    {
+      "commit": "5e09dcb8adb75ca95b6509f3ebc3ed18e4e9fd43",
+      "parent_commit": "3b3d65f41b6ae5a6cb93ede2ada38e01a8d4f87f",
+      "timestamp": "2026-10-09T16:19:44+02:00",
+      "status": "scored",
+      "score": 93,
+      "rating": "good",
+      "average_change_percent": -11.18,
+      "scenario_id": "runtime-profiler-history-self-score-v1",
+      "scenario_digest": "3c0f5cc149bb6f5081014d314a755866639a6ab9d28f9118098ef97d6ca46f87",
+      "environment_fingerprint_schema_version": "runtime-profiler/environment-fingerprint/v1",
+      "environment_fingerprint": "e75d56dcc249b001a87a06cfedc74356979b28ec5efb7d1edaf7a2c9f75c8ccc",
+      "workload_digest": "sha256:e99b2e5e92ac0ce41535a0a6b660f112320b47281a0a82142573807ef281311c",
+      "metrics": [
+        {
+          "id": "process.max_observed_rss",
+          "score": 80,
+          "average_change_percent": -33.333,
+          "statistics": [
+            {
+              "statistic": "median",
+              "score": 100,
+              "change_percent": 0
+            },
+            {
+              "statistic": "p95",
+              "score": 60,
+              "change_percent": -66.667
+            }
+          ]
+        },
+        {
+          "id": "process.success_rate",
+          "score": 100,
+          "average_change_percent": 0,
+          "statistics": [
+            {
+              "statistic": "mean",
+              "score": 100,
+              "change_percent": 0
+            }
+          ]
+        },
+        {
+          "id": "process.wall_time",
+          "score": 100,
+          "average_change_percent": -0.208,
+          "statistics": [
+            {
+              "statistic": "median",
+              "score": 100,
+              "change_percent": -0.075
+            },
+            {
+              "statistic": "p95",
+              "score": 100,
+              "change_percent": -0.341
+            }
+          ]
+        }
+      ],
+      "excluded_metrics": [
+        {
+          "id": "process.max_rss",
+          "reason": "compatibility alias of process.max_observed_rss; excluded to avoid double-weighting"
+        }
+      ],
+      "reason": null
     }
   ]
 }
