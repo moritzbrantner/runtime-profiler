@@ -167,7 +167,7 @@ fn score_metrics(
         let candidate_metric = candidate
             .metrics
             .get(id)
-            .expect("canonical metric sets were checked for equality");
+            .with_context(|| format!("candidate metric {id} is missing"))?;
         ensure!(
             reference_metric.unit == candidate_metric.unit,
             "metric {id} unit differs (reference={}, candidate={})",
