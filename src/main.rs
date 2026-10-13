@@ -8,9 +8,11 @@ use clap::{Parser, Subcommand};
 use runtime_profiler::capture::install_cli_interruption_handlers;
 use runtime_profiler::contract::{Detection, DetectionReport, MetricsDocument};
 use runtime_profiler::{
+    BrowserComparabilityReport, BrowserComparabilityStatus, ChromiumTraceSummary,
     HotspotComparabilityReport, HotspotComparabilityStatus, RuntimeScoreDocument,
-    build_agent_evidence_reference, capture_bundle, compare_hotspot_bundles, load_scenario,
-    render_agent_guidance, score_bundles, summarize_bundle, validate_bundle,
+    analyze_chromium_trace, build_agent_evidence_reference, capture_bundle,
+    compare_browser_bundles, compare_hotspot_bundles, load_scenario, render_agent_guidance,
+    score_bundles, summarize_bundle, validate_bundle,
 };
 
 #[derive(Debug, Parser)]
@@ -70,6 +72,22 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Report whether two browser bundles have enough compatible identity to compare.
+    CompareBrowser {
+        #[arg(long)]
+        reference: PathBuf,
+        #[arg(long)]
+        candidate: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Normalize a Chromium trace into bounded renderer-main-thread runtime evidence.
+    AnalyzeChromiumTrace {
+        #[arg(long)]
+        trace: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
     /// Render bounded Markdown guidance from a valid evidence bundle.
     RenderAgentGuidance {
         #[arg(long)]
@@ -89,25 +107,25 @@ enum Commands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Detect => print_json(&detect()),
+        Commands::Detect => print_json(&detect())?,
         Commands::Plan { scenario } => {
             let loaded = load_scenario(&scenario)?;
-            print_json(&loaded.plan());
+            print_json(&loaded.plan())?;
         }
         Commands::Capture { scenario, output } => {
             install_cli_interruption_handlers()?;
             let manifest = capture_bundle(&scenario, &output)?;
-            print_json(&manifest);
+            print_json(&manifest)?;
         }
         Commands::Validate { bundle } => {
             let report = validate_bundle(&bundle)?;
-            print_json(&report);
+            print_json(&report)?;
             ensure!(report.valid, "bundle validation failed");
         }
         Commands::Summarize { bundle, json } => {
             let metrics = summarize_bundle(&bundle)?;
             if json {
-                print_json(&metrics);
+                print_json(&metrics)?;
             } else {
                 print_summary(&metrics);
             }
@@ -119,7 +137,7 @@ fn main() -> Result<()> {
         } => {
             let score = score_bundles(&reference, &candidate)?;
             if json {
-                print_json(&score);
+                print_json(&score)?;
             } else {
                 print_score(&score);
             }
@@ -131,9 +149,29 @@ fn main() -> Result<()> {
         } => {
             let report = compare_hotspot_bundles(&reference, &candidate)?;
             if json {
-                print_json(&report);
+                print_json(&report)?;
             } else {
                 print_hotspot_comparability(&report);
+            }
+        }
+        Commands::CompareBrowser {
+            reference,
+            candidate,
+            json,
+        } => {
+            let report = compare_browser_bundles(&reference, &candidate)?;
+            if json {
+                print_json(&report)?;
+            } else {
+                print_browser_comparability(&report);
+            }
+        }
+        Commands::AnalyzeChromiumTrace { trace, json } => {
+            let summary = analyze_chromium_trace(&trace)?;
+            if json {
+                print_json(&summary)?;
+            } else {
+                print_chromium_trace_summary(&summary);
             }
         }
         Commands::RenderAgentGuidance { bundle, output } => {
@@ -151,7 +189,7 @@ fn main() -> Result<()> {
             }
         }
         Commands::EvidenceReference { bundle, uri } => {
-            print_json(&build_agent_evidence_reference(&bundle, uri)?);
+            print_json(&build_agent_evidence_reference(&bundle, uri)?)?;
         }
     }
     Ok(())
@@ -177,8 +215,12 @@ fn detect() -> DetectionReport {
         runtime_profiler::native_perf::detect_native_perf(),
     );
     collectors.insert(
-        "browser-playwright".to_owned(),
-        planned_detection("bun", "planned Bun and Playwright journey adapter"),
+        runtime_profiler::browser_chromium::COLLECTOR_ID.to_owned(),
+        runtime_profiler::browser_chromium::detect_browser_chromium(),
+    );
+    collectors.insert(
+        "http-curl".to_owned(),
+        runtime_profiler::http_workload::detect_http_curl(),
     );
 
     DetectionReport {
@@ -214,11 +256,9 @@ fn program_available(program: &str) -> bool {
         .is_ok()
 }
 
-fn print_json<T: serde::Serialize>(value: &T) {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(value).expect("serializable CLI response")
-    );
+fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
 }
 
 fn print_summary(metrics: &MetricsDocument) {
@@ -269,5 +309,52 @@ fn print_hotspot_comparability(report: &HotspotComparabilityReport) {
     println!("Hotspot comparability: {status}");
     for reason in &report.reasons {
         println!("- {reason}");
+    }
+}
+
+fn print_browser_comparability(report: &BrowserComparabilityReport) {
+    let status = match report.status {
+        BrowserComparabilityStatus::Comparable => "comparable",
+        BrowserComparabilityStatus::Incomparable => "incomparable",
+        BrowserComparabilityStatus::InsufficientEvidence => "insufficient-evidence",
+    };
+    println!("Browser comparability: {status}");
+    for reason in &report.reasons {
+        println!("- {reason}");
+    }
+}
+
+fn print_chromium_trace_summary(summary: &ChromiumTraceSummary) {
+    println!(
+        "Renderer main thread: {} (pid={}, tid={})",
+        summary.main_thread.name, summary.main_thread.process_id, summary.main_thread.thread_id
+    );
+    println!(
+        "Top-level tasks: {} ({} us observed), long tasks >= 50 ms: {} ({} us total)",
+        summary.top_level_task_count,
+        summary.top_level_duration_us,
+        summary.long_task_count,
+        summary.long_task_total_duration_us
+    );
+    if let Some(longest) = summary.longest_task_us {
+        println!("Longest task: {longest} us");
+    }
+    for path in summary.hot_paths.iter().take(5) {
+        let frames = path
+            .frames
+            .iter()
+            .map(|frame| frame.name.as_str())
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        println!(
+            "Hot path: {} us across {} occurrences [{}]",
+            path.total_duration_us, path.occurrences, frames
+        );
+    }
+    for boundary in summary.boundary_markers.iter().take(5) {
+        println!(
+            "Boundary {} `{}`: {} us across {} occurrences",
+            boundary.direction, boundary.label, boundary.total_duration_us, boundary.occurrences
+        );
     }
 }

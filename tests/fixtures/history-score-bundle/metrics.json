@@ -1,0 +1,100 @@
+{
+  "schema_version": "runtime-profiler/metrics/v1",
+  "scenario_id": "history-score-fixture",
+  "samples": [
+    {
+      "iteration": 1,
+      "duration_ms": 1.0,
+      "max_rss_kib": 1025,
+      "exit_code": 0,
+      "timed_out": false,
+      "succeeded": true
+    },
+    {
+      "iteration": 2,
+      "duration_ms": 2.0,
+      "max_rss_kib": 1026,
+      "exit_code": 0,
+      "timed_out": false,
+      "succeeded": true
+    },
+    {
+      "iteration": 3,
+      "duration_ms": 3.0,
+      "max_rss_kib": 1027,
+      "exit_code": 0,
+      "timed_out": false,
+      "succeeded": true
+    },
+    {
+      "iteration": 4,
+      "duration_ms": 4.0,
+      "max_rss_kib": 1028,
+      "exit_code": 0,
+      "timed_out": false,
+      "succeeded": true
+    },
+    {
+      "iteration": 5,
+      "duration_ms": 5.0,
+      "max_rss_kib": 1029,
+      "exit_code": 0,
+      "timed_out": false,
+      "succeeded": true
+    }
+  ],
+  "metrics": [
+    {
+      "id": "process.wall_time",
+      "unit": "ms",
+      "preferred_direction": "lower",
+      "statistics": {
+        "sample_count": 5,
+        "minimum": 1.0,
+        "maximum": 5.0,
+        "mean": 3.0,
+        "median": 3.0,
+        "p95": 5.0
+      }
+    },
+    {
+      "id": "process.success_rate",
+      "unit": "ratio",
+      "preferred_direction": "higher",
+      "statistics": {
+        "sample_count": 5,
+        "minimum": 1.0,
+        "maximum": 1.0,
+        "mean": 1.0,
+        "median": 1.0,
+        "p95": 1.0
+      }
+    },
+    {
+      "id": "process.max_observed_rss",
+      "unit": "KiB",
+      "preferred_direction": "lower",
+      "statistics": {
+        "sample_count": 5,
+        "minimum": 1025.0,
+        "maximum": 1029.0,
+        "mean": 1027.0,
+        "median": 1027.0,
+        "p95": 1029.0
+      }
+    },
+    {
+      "id": "process.max_rss",
+      "unit": "KiB",
+      "preferred_direction": "lower",
+      "statistics": {
+        "sample_count": 5,
+        "minimum": 1025.0,
+        "maximum": 1029.0,
+        "mean": 1027.0,
+        "median": 1027.0,
+        "p95": 1029.0
+      }
+    }
+  ]
+}

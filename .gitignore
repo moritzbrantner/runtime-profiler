@@ -1,3 +1,10 @@
 /target/
 /.runtime-profiler/
+/node_modules/
+/dist/
+/site/app.js
+/site/validator.mjs
+/site/results/*.js
+/site/score/*.js
+/site/validate.json/*.js
 *.profraw

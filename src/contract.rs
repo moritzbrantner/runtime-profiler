@@ -40,6 +40,92 @@ pub enum Target {
         #[serde(default)]
         inherit_env: Vec<String>,
     },
+    BrowserJourney {
+        module: PathBuf,
+        #[serde(default)]
+        working_directory: Option<PathBuf>,
+        #[serde(default)]
+        inherit_env: Vec<String>,
+    },
+    HttpWorkload {
+        fixture: HttpFixture,
+        requests: Vec<HttpRequest>,
+        request_count: u32,
+        concurrency: u32,
+        request_timeout_seconds: u64,
+    },
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct FixtureCommand {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HttpFixture {
+    pub program: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub working_directory: Option<PathBuf>,
+    #[serde(default)]
+    pub inherit_env: Vec<String>,
+    pub health_path: String,
+    pub startup_timeout_seconds: u64,
+    #[serde(default)]
+    pub teardown: Option<FixtureCommand>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct HttpRequest {
+    pub method: String,
+    pub path: String,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default)]
+    pub content_type: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_http_headers",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub headers: BTreeMap<String, String>,
+    pub expected_status: u16,
+}
+
+fn deserialize_http_headers<'de, D>(deserializer: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct HeadersVisitor;
+    impl<'de> serde::de::Visitor<'de> for HeadersVisitor {
+        type Value = BTreeMap<String, String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("an object with unique case-insensitive HTTP header names")
+        }
+
+        fn visit_map<M>(self, mut map: M) -> Result<Self::Value, M::Error>
+        where
+            M: serde::de::MapAccess<'de>,
+        {
+            let mut headers = BTreeMap::new();
+            let mut names = std::collections::BTreeSet::new();
+            while let Some((name, value)) = map.next_entry::<String, String>()? {
+                if !names.insert(name.to_ascii_lowercase()) {
+                    return Err(serde::de::Error::custom("duplicate HTTP header name"));
+                }
+                headers.insert(name, value);
+            }
+            Ok(headers)
+        }
+    }
+    deserializer.deserialize_map(HeadersVisitor)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -84,6 +170,8 @@ fn default_collectors() -> Vec<Collector> {
 pub enum Collector {
     Process,
     NativePerf,
+    BrowserChromium,
+    HttpCurl,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -122,12 +210,27 @@ pub struct ScenarioEvidence {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TargetEvidence {
-    pub target_type: String,
-    pub program: String,
-    pub argument_count: usize,
-    pub working_directory_set: bool,
-    pub inherited_environment_names: Vec<String>,
+#[serde(tag = "target_type", rename_all = "kebab-case")]
+pub enum TargetEvidence {
+    Command {
+        program: String,
+        argument_count: usize,
+        working_directory_set: bool,
+        inherited_environment_names: Vec<String>,
+    },
+    BrowserJourney {
+        module: String,
+        working_directory_set: bool,
+        inherited_environment_names: Vec<String>,
+    },
+    HttpWorkload {
+        request_count: u32,
+        endpoint_count: usize,
+        concurrency: u32,
+        request_timeout_seconds: u64,
+        fixture_program: String,
+        inherited_environment_names: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -245,7 +348,26 @@ pub struct Hotspot {
     pub samples: u64,
     #[serde(default)]
     pub confidence: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub call_paths: Vec<HotspotCallPath>,
+    #[serde(default)]
+    pub call_paths_truncated: bool,
     pub evidence_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HotspotCallPath {
+    #[serde(default)]
+    pub id: String,
+    pub frames: Vec<HotspotCallPathFrame>,
+    #[serde(default)]
+    pub samples: u64,
+    pub evidence_ref: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HotspotCallPathFrame {
+    pub symbol: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

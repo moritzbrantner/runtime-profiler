@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Inspect validated runtime-profiler measurements, hotspots, browser evidence, and artifact integrity."
+    />
+    <title>runtime-profiler · result explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a href="../">runtime-profiler</a>
+      <nav aria-label="Profiler Pages">
+        <a href="../">Bundle validator</a>
+        <a href="../score/">Score history</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">Validated evidence / result explorer</p>
+        <h1 id="page-title">See what the profiler measured.</h1>
+        <p class="lede">
+          Load a public immutable bundle and inspect its run identity, distributions, samples,
+          hotspots, browser evidence, guidance, and integrity trail. The bundle remains the source of
+          truth; this page only validates and presents it.
+        </p>
+      </section>
+
+      <form id="manifest-form">
+        <label for="manifest">Public manifest.json URL</label>
+        <div class="form-row">
+          <input
+            id="manifest"
+            name="manifest"
+            type="url"
+            required
+            placeholder="https://…/bundle/manifest.json"
+            autocomplete="off"
+          />
+          <button type="submit">Open report</button>
+        </div>
+      </form>
+      <p id="status" role="status">The source host must allow browser CORS requests.</p>
+
+      <div id="report" hidden>
+        <section class="report-heading" aria-labelledby="report-title">
+          <div>
+            <p class="eyebrow">Bundle report</p>
+            <h2 id="report-title">Runtime evidence</h2>
+          </div>
+          <div class="report-links">
+            <a id="validation-link" href="../">Open validation JSON</a>
+            <a id="manifest-link" href="#">Open manifest</a>
+          </div>
+        </section>
+
+        <section aria-labelledby="identity-title">
+          <div class="section-heading">
+            <p class="eyebrow">Identity</p>
+            <h2 id="identity-title">Run and environment</h2>
+          </div>
+          <div class="detail-columns">
+            <dl id="identity-details"></dl>
+            <dl id="environment-details"></dl>
+          </div>
+        </section>
+
+        <section aria-labelledby="measurements-title">
+          <div class="section-heading">
+            <p class="eyebrow">Process evidence</p>
+            <h2 id="measurements-title">Measurements</h2>
+            <p class="section-note">Aggregate statistics from the captured measurement iterations.</p>
+          </div>
+          <div id="measurements-table"></div>
+        </section>
+
+        <section aria-labelledby="samples-title">
+          <div class="section-heading">
+            <p class="eyebrow">Raw bounded samples</p>
+            <h2 id="samples-title">Iterations</h2>
+          </div>
+          <div id="samples-table"></div>
+        </section>
+
+        <section id="native-profile" aria-labelledby="native-title" hidden>
+          <div class="section-heading">
+            <p class="eyebrow">Native profile</p>
+            <h2 id="native-title">Hotspots</h2>
+            <p id="native-note" class="section-note"></p>
+          </div>
+          <div id="native-details" class="inline-details"></div>
+          <div id="hotspots-table"></div>
+        </section>
+
+        <section id="browser-profile" aria-labelledby="browser-title" hidden>
+          <div class="section-heading">
+            <p class="eyebrow">Browser profile</p>
+            <h2 id="browser-title">Chromium journey</h2>
+            <p id="browser-note" class="section-note"></p>
+          </div>
+          <div id="browser-details" class="inline-details"></div>
+
+          <h3>Runtime attribution</h3>
+          <div id="runtime-table"></div>
+
+          <h3>Long tasks</h3>
+          <div id="long-tasks-table"></div>
+
+          <h3>Hot paths</h3>
+          <div id="browser-hotpaths-table"></div>
+
+          <h3>JS/WASM boundaries</h3>
+          <div id="boundaries-table"></div>
+
+          <div id="browser-limitations" class="notes" hidden>
+            <h3>Limitations</h3>
+            <ul></ul>
+          </div>
+        </section>
+
+        <section id="guidance" aria-labelledby="guidance-title" hidden>
+          <div class="section-heading">
+            <p class="eyebrow">Bounded interpretation</p>
+            <h2 id="guidance-title">Agent guidance</h2>
+          </div>
+          <div id="observations-table"></div>
+          <div id="constraints" class="notes" hidden>
+            <h3>Constraints</h3>
+            <ul></ul>
+          </div>
+        </section>
+
+        <section id="diagnostics" aria-labelledby="diagnostics-title" hidden>
+          <div class="section-heading">
+            <p class="eyebrow">Validation</p>
+            <h2 id="diagnostics-title">Diagnostics</h2>
+          </div>
+          <ul></ul>
+        </section>
+
+        <section aria-labelledby="artifacts-title">
+          <div class="section-heading">
+            <p class="eyebrow">Evidence trail</p>
+            <h2 id="artifacts-title">Artifact integrity</h2>
+            <p class="section-note">
+              Digests are checked in the browser before evidence is rendered. Raw traces remain source
+              artifacts rather than being copied into this report.
+            </p>
+          </div>
+          <div id="artifacts-table"></div>
+        </section>
+
+        <aside>
+          <strong>Boundary:</strong> this Pages report does not capture workloads or decide whether a
+          change should ship. Capture remains local/CI runtime-profiler work, and project-specific
+          regression policy belongs to an evaluator such as Moonlight.
+        </aside>
+      </div>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

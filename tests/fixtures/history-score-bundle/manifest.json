@@ -1,0 +1,40 @@
+{
+  "schema_version": "runtime-profiler/bundle-manifest/v1",
+  "bundle_id": "1eb7037db0d31171ee8f1b48863f1ed5568ee7e8183c39f72e03b7229793208d",
+  "created_unix_ms": 0,
+  "scenario_id": "history-score-fixture",
+  "scenario_digest": "16d9b819f3ee9dc68479f39b163ebb048c787013ff5cd7774fb900cdcd6d5c4c",
+  "environment_fingerprint_schema_version": "runtime-profiler/environment-fingerprint/v1",
+  "environment_fingerprint": "3ec4c9a6d3ce8620241ff096598a8fb83e3211e3d67794fac01dcb7ba09e9d4c",
+  "source": {
+    "git_sha": null,
+    "dirty": null
+  },
+  "files": [
+    {
+      "path": "scenario.json",
+      "media_type": "application/json",
+      "sha256": "923a11da09db7645c20007b1ffce7cc3ebf748819788f4e75bc8d9c013773c42"
+    },
+    {
+      "path": "environment.json",
+      "media_type": "application/json",
+      "sha256": "ed417418403e65223814522347784e321da09b461ee0c6750acf59f41175086e"
+    },
+    {
+      "path": "metrics.json",
+      "media_type": "application/json",
+      "sha256": "377eb16a3734f78a84fa3c4640caf3d81f68e470195c8353823ec69a0d1584df"
+    },
+    {
+      "path": "hotspots.json",
+      "media_type": "application/json",
+      "sha256": "a7e5fbfa615c9cd93dc11f48e8629b6dcd5fcaf498ab1931325b97bc70537f1a"
+    },
+    {
+      "path": "agent-guidance.json",
+      "media_type": "application/json",
+      "sha256": "9bc31b86879d16c03749b9307436e63a42dcb307910a1f1a35bbe2fc26eb311e"
+    }
+  ]
+}

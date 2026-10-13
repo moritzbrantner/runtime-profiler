@@ -1,0 +1,18 @@
+[
+  {
+    "ph": "M",
+    "name": "thread_name",
+    "pid": 2,
+    "tid": 20,
+    "args": { "name": "CrRendererMain" }
+  },
+  {
+    "ph": "X",
+    "name": "RawArrayTask",
+    "cat": "toplevel",
+    "pid": 2,
+    "tid": 20,
+    "ts": 100,
+    "dur": 50000
+  }
+]

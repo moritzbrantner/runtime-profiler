@@ -37,6 +37,22 @@ test("browser validator accepts optional native perf evidence", async () => {
   assert.deepEqual(report.diagnostics, []);
 });
 
+test("browser validator accepts Chromium journey evidence", async () => {
+  const fixture = await bundleFixture({ browser: true });
+  const report = await validateBundleUrl(manifestUrl, {
+    fetchImpl: fakeFetch(fixture.responses),
+    cryptoImpl: webcrypto,
+  });
+
+  assert.equal(report.valid, true);
+  assert.equal(report.verified_files, 8);
+  assert.equal(report.summary.metric_count, 0);
+  assert.equal(report.summary.sample_count, 0);
+  assert.equal(report.evidence.browser_runtime.browser_name, "chromium");
+  assert.equal(report.evidence.chromium_trace_summary.long_task_count, 1);
+  assert.deepEqual(report.diagnostics, []);
+});
+
 test("browser validator rejects partial native toolchain identity", async () => {
   const fixture = await bundleFixture({ nativePerf: true, partialToolchain: true });
   const report = await validateBundleUrl(manifestUrl, {
@@ -48,6 +64,24 @@ test("browser validator rejects partial native toolchain identity", async () => 
   assert.ok(
     report.diagnostics.includes("native-perf target toolchain identity is only partially recorded"),
   );
+});
+
+test("browser validator accepts bounded HTTP evidence and rejects a missing sidecar", async () => {
+  const fixture = await bundleFixture({ http: true });
+  const report = await validateBundleUrl(manifestUrl, {
+    fetchImpl: fakeFetch(fixture.responses), cryptoImpl: webcrypto,
+  });
+  assert.equal(report.valid, true);
+  assert.equal(report.verified_files, 6);
+  assert.equal(report.evidence.http_workload.concurrency, 1);
+  const manifest = JSON.parse(fixture.responses.get(manifestUrl));
+  manifest.files = manifest.files.filter((artifact) => artifact.path !== "http-workload.json");
+  fixture.responses.set(manifestUrl, JSON.stringify(manifest));
+  const missing = await validateBundleUrl(manifestUrl, {
+    fetchImpl: fakeFetch(fixture.responses), cryptoImpl: webcrypto,
+  });
+  assert.equal(missing.valid, false);
+  assert.ok(missing.diagnostics.includes("HTTP workload is missing its target or measurement artifact"));
 });
 
 test("browser validator reports artifact corruption", async () => {
@@ -75,7 +109,12 @@ test("browser validator rejects escaping artifact paths", () => {
   assert.equal(isSafeRelativePath("nested\\metrics.json"), false);
 });
 
-async function bundleFixture({ nativePerf = false, partialToolchain = false } = {}) {
+async function bundleFixture({
+  nativePerf = false,
+  partialToolchain = false,
+  browser = false,
+  http = false,
+} = {}) {
   const nativeHotspots = nativePerf
     ? {
         schema_version: "runtime-profiler/hotspots/v1",
@@ -122,15 +161,68 @@ async function bundleFixture({ nativePerf = false, partialToolchain = false } = 
     delete nativeHotspots.target_toolchain_fingerprint;
   }
 
+  const scenario = browser
+    ? {
+        schema_version: "runtime-profiler/scenario-evidence/v1",
+        id: "example",
+        digest: "scenario-digest",
+        target: {
+          target_type: "browser-journey",
+          module: "profiles/journey.mjs",
+          working_directory_set: true,
+          inherited_environment_names: [],
+        },
+        run: { warmup_iterations: 0, measurement_iterations: 1, timeout_seconds: 30 },
+        collectors: ["browser-chromium"],
+      }
+    : {
+        schema_version: "runtime-profiler/scenario-evidence/v1",
+        id: "example",
+        digest: "scenario-digest",
+        target: { target_type: "command" },
+        run: { warmup_iterations: 1, measurement_iterations: 1, timeout_seconds: 30 },
+        collectors: nativePerf ? ["process", "native-perf"] : ["process"],
+      };
+
+  const metrics = browser
+    ? {
+        schema_version: "runtime-profiler/metrics/v1",
+        scenario_id: "example",
+        samples: [],
+        metrics: [],
+      }
+    : {
+        schema_version: "runtime-profiler/metrics/v1",
+        scenario_id: "example",
+        samples: [
+          {
+            iteration: 0,
+            duration_ms: 10,
+            max_rss_kib: 100,
+            exit_code: 0,
+            timed_out: false,
+            succeeded: true,
+          },
+        ],
+        metrics: [
+          {
+            id: "process.wall_time",
+            unit: "ms",
+            preferred_direction: "lower",
+            statistics: {
+              sample_count: 1,
+              minimum: 10,
+              maximum: 10,
+              mean: 10,
+              median: 10,
+              p95: 10,
+            },
+          },
+        ],
+      };
+
   const documents = {
-    "scenario.json": {
-      schema_version: "runtime-profiler/scenario-evidence/v1",
-      id: "example",
-      digest: "scenario-digest",
-      target: { target_type: "command" },
-      run: { warmup_iterations: 1, measurement_iterations: 1, timeout_seconds: 30 },
-      collectors: nativePerf ? ["process", "native-perf"] : ["process"],
-    },
+    "scenario.json": scenario,
     "environment.json": {
       schema_version: "runtime-profiler/environment/v1",
       environment_fingerprint_schema_version: "runtime-profiler/environment-fingerprint/v1",
@@ -141,28 +233,7 @@ async function bundleFixture({ nativePerf = false, partialToolchain = false } = 
       logical_cpu_count: 8,
       source: { git_sha: "abc123", dirty: false },
     },
-    "metrics.json": {
-      schema_version: "runtime-profiler/metrics/v1",
-      scenario_id: "example",
-      samples: [
-        {
-          iteration: 0,
-          duration_ms: 10,
-          max_rss_kib: 100,
-          exit_code: 0,
-          timed_out: false,
-          succeeded: true,
-        },
-      ],
-      metrics: [
-        {
-          id: "process.wall_time",
-          unit: "ms",
-          preferred_direction: "lower",
-          statistics: { sample_count: 1, minimum: 10, maximum: 10, mean: 10, median: 10, p95: 10 },
-        },
-      ],
-    },
+    "metrics.json": metrics,
     "hotspots.json": nativeHotspots,
     "agent-guidance.json": {
       schema_version: "runtime-profiler/agent-guidance/v1",
@@ -173,7 +244,55 @@ async function bundleFixture({ nativePerf = false, partialToolchain = false } = 
     },
   };
 
+  if (browser) {
+    documents["chromium-trace-summary.json"] = {
+      schema_version: "runtime-profiler/chromium-trace-summary/v1",
+      trace_event_count: 3,
+      main_thread: { process_id: 1, thread_id: 2, name: "CrRendererMain" },
+      top_level_task_count: 1,
+      top_level_duration_us: 60000,
+      long_task_count: 1,
+      long_task_total_duration_us: 60000,
+      longest_task_us: 60000,
+      long_tasks_truncated: false,
+      long_tasks: [],
+      hot_path_count: 0,
+      hot_paths_truncated: false,
+      hot_path_depth_truncated: false,
+      hot_paths: [],
+      runtime_attribution: [],
+      boundary_marker_count: 0,
+      boundary_markers_truncated: false,
+      boundary_markers: [],
+      limitations: [],
+    };
+    documents["browser-runtime.json"] = {
+      schema_version: "runtime-profiler/browser-runtime/v1",
+      adapter_version: "runtime-profiler/playwright-driver/v1",
+      node_version: "v24.0.0",
+      playwright_version: "1.58.0",
+      browser_name: "chromium",
+      browser_version: "140.0.0",
+      viewport: { width: 1280, height: 720 },
+      trace_categories: ["devtools.timeline", "v8", "v8.execute", "blink.user_timing"],
+    };
+  }
+
   const responses = new Map();
+  if (http) {
+    scenario.target = { target_type: "http-workload", fixture_program: "python3", request_count: 1, endpoint_count: 1, concurrency: 1, request_timeout_seconds: 1 };
+    scenario.collectors = ["http-curl"];
+    metrics.metrics[0].id = "http.latency";
+    metrics.samples[0].max_rss_kib = null;
+    documents["http-workload.json"] = {
+      schema_version: "runtime-profiler/http-workload/v1", scenario_id: "example",
+      collector_version: "curl 8.4.0 fixture", adapter_digest: "a".repeat(64),
+      concurrency: 1, request_count_per_iteration: 1,
+      fixture_setup_ms: 1, fixture_teardown_ms: 1, collector_wall_time_ms: 20,
+      overhead_status: "not-isolated", batches: [{ iteration: 0, wall_time_ms: 20 }],
+      samples: [{ iteration: 0, request_index: 0, endpoint_index: 0, status_code: 200, expected_status: 200, curl_exit_code: 0, duration_ms: 10, response_bytes: 16, succeeded: true }],
+    };
+  }
   const files = [];
   for (const [path, document] of Object.entries(documents)) {
     const text = `${JSON.stringify(document)}\n`;
@@ -192,6 +311,17 @@ async function bundleFixture({ nativePerf = false, partialToolchain = false } = 
     files.push({
       path,
       media_type: "text/tab-separated-values; charset=utf-8",
+      sha256: await sha256(encoder.encode(text), webcrypto),
+    });
+  }
+
+  if (browser) {
+    const path = "chromium-trace.json";
+    const text = '{"traceEvents":[]}\n';
+    responses.set(`https://example.test/bundle/${path}`, text);
+    files.push({
+      path,
+      media_type: "application/json",
       sha256: await sha256(encoder.encode(text), webcrypto),
     });
   }

@@ -10,16 +10,15 @@ publish = false
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0", features = ["arbitrary_precision"] }
+serde_json = { version = "1.0", features = ["arbitrary_precision", "float_roundtrip"] }
 serde_yaml = "0.9"
 sha2 = "0.10"
 time = { version = "0.3", features = ["formatting"] }
+tempfile = "3.20"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
-
-[dev-dependencies]
-tempfile = "3.20"
+rustix = { version = "1.1", features = ["process"] }
 
 [lints.rust]
 unsafe_code = "forbid"

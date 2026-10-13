@@ -8,12 +8,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: runtime-profiler-ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   findings:
     name: Deterministic Findings
     permissions:
       contents: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@604f68a276c49ab557d40578fb7453fb964b4882
+    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@159701da0842f885d786fc8109c1de32f7dc0128
     with:
       operation: findings
       report_path: .artifacts/coding-tooling/findings.json
@@ -22,7 +26,7 @@ jobs:
     name: Coding Tooling Fast
     permissions:
       contents: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@604f68a276c49ab557d40578fb7453fb964b4882
+    uses: moritzbrantner/reusable-workflows/.github/workflows/coding-tooling-validation.yml@159701da0842f885d786fc8109c1de32f7dc0128
     with:
       operation: run
       tier: fast
@@ -33,16 +37,24 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Check out repository
+      - name: Check out exact revision
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+
+      - name: Install Pages dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.98.0
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # immutable action revision
         with:
-          components: clippy, rustfmt
-
-      - name: Generate dependency lockfile
-        run: cargo generate-lockfile
+          toolchain: "1.98.0"
+          components: rustfmt, clippy
 
       - name: Install contract validation dependencies
         run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
@@ -50,17 +62,11 @@ jobs:
       - name: Check contracts
         run: python3 scripts/check_contracts.py
 
-      - name: Test Pages and score-history JavaScript
-        run: node --test tests/*.test.mjs
+      - name: Verify TypeScript Pages surfaces
+        run: npm run verify:pages
 
-      - name: Check formatting
-        run: cargo fmt --check
-
-      - name: Lint
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
-
-      - name: Test
-        run: cargo test --locked
+      - name: Run Rust integration tests
+        run: cargo test --locked --test '*'
 
       - name: Smoke capture
         run: |
@@ -71,11 +77,3 @@ jobs:
           cargo run --locked -- render-agent-guidance --bundle target/smoke-bundle
           cargo run --locked -- evidence-reference --bundle target/smoke-bundle --uri .agent-loop/evidence/runtime-profiler/smoke-bundle > target/smoke-evidence-reference.json
           python3 scripts/check_contracts.py --evidence-reference target/smoke-evidence-reference.json
-
-      - name: Preserve generated lockfile
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-lock
-          path: Cargo.lock
-          if-no-files-found: error

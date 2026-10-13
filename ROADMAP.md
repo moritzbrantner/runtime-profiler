@@ -40,11 +40,20 @@ bounded set of source-level hotspots.
 
 ## Phase 4 — Browser and application journeys
 
-- [ ] Playwright journey adapter.
-- [ ] Chromium performance trace ingestion.
+- [x] Playwright browser-journey capture into immutable profiler bundles.
+- [x] Chromium performance trace ingestion and bounded normalization.
+- [x] Renderer-main long-task and hot-path summaries.
+- [x] Explicit JS/WASM boundary-marker normalization.
+- [x] Strict descriptive browser bundle comparability and bounded agent guidance.
 - [ ] Lighthouse navigation, timespan, and snapshot evidence.
-- [ ] React render and long-task summaries.
+- [ ] React render-budget evidence ingestion.
 - [ ] Tauri and Expo adapter discovery.
+- [ ] Flagship consumer dogfood proving reference/candidate capture in a maintained web repository.
+
+Phase 4 is not complete. The shipped browser foundation provides capture,
+normalization, identity, comparison preconditions, and bounded guidance; it does
+not yet provide Lighthouse, React-render, desktop/mobile adapters, or the full
+consumer dogfood path.
 
 Exit criterion: frontend and backend evidence share the same scenario identity
 and can be correlated without embedding raw traces in an agent prompt.

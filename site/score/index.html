@@ -17,11 +17,11 @@
     </header>
     <main>
       <section class="hero">
-        <p class="eyebrow">Runtime progression</p>
+        <p class="eyebrow">Adjacent runtime comparison</p>
         <div class="hero-row">
           <div>
             <h1><span id="latest-score">—</span><small>/100</small></h1>
-            <p id="latest-rating" class="lede">Loading the latest comparison…</p>
+            <p id="latest-context" class="lede">Loading the latest adjacent comparison…</p>
           </div>
           <div class="change-card">
             <span>Average signed change</span>
@@ -37,8 +37,8 @@
 
       <section>
         <div class="section-heading">
-          <p class="eyebrow">Retention trend</p>
-          <h2>Last 60 comparable commits</h2>
+          <p class="eyebrow">Current workload history</p>
+          <h2>Last 60 comparisons for the current workload</h2>
         </div>
         <div class="chart-shell">
           <svg
@@ -50,7 +50,7 @@
         </div>
         <p class="muted explanation">
           A score of 100 means the candidate meets or beats its first parent on all scored runtime
-          evidence. Positive signed change means improvement; regressions reduce the retention score.
+          evidence. Only entries with the same scenario and workload digest are joined in this chart.
         </p>
       </section>
 
@@ -76,6 +76,7 @@
                 <th>Timestamp</th>
                 <th>Retention</th>
                 <th>Avg change</th>
+                <th>Workload</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -86,13 +87,13 @@
 
       <aside>
         <strong>Measurement boundary:</strong> each history point rebuilds the candidate and its first
-        parent on the same GitHub runner and captures the same stable process scenario. Incomparable
-        revisions are retained as unavailable rather than converted into a synthetic score. This is a
-        descriptive runtime signal; release policy remains outside runtime-profiler.
+        parent on the same hosted runner, then measures each revision running the same immutable
+        runtime-profiler score fixture. Hosted-runner results are informational adjacent comparisons,
+        not a controlled performance trend or release gate.
       </aside>
     </main>
     <footer>
-      <span>Same runner, same scenario, adjacent revisions.</span>
+      <span>Same runner per pair. Versioned workload. Descriptive only.</span>
       <a href="https://github.com/moritzbrantner/runtime-profiler">GitHub</a>
     </footer>
     <script type="module" src="./app.js"></script>

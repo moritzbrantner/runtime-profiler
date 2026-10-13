@@ -8,13 +8,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, ensure};
 use serde::Serialize;
 
+use crate::browser_chromium::{
+    BROWSER_RUNTIME_ARTIFACT, BROWSER_RUNTIME_MEDIA_TYPE, BROWSER_RUNTIME_SCHEMA_V1,
+    BrowserRuntimeDocument, RAW_TRACE_ARTIFACT, RAW_TRACE_MEDIA_TYPE, TRACE_SUMMARY_ARTIFACT,
+    TRACE_SUMMARY_MEDIA_TYPE, capture_browser_chromium, validate_runtime_metadata,
+};
 use crate::capture::{capture_metrics, ensure_not_interrupted};
+use crate::chromium_trace::{CHROMIUM_TRACE_SUMMARY_SCHEMA_V1, ChromiumTraceSummary};
 use crate::contract::{
     AgentGuidance, AgentObservation, ArtifactEntry, BundleManifest, Collector,
     ENVIRONMENT_FINGERPRINT_SCHEMA_LEGACY_V0, ENVIRONMENT_FINGERPRINT_SCHEMA_V1,
     ENVIRONMENT_SCHEMA_V1, EnvironmentDocument, GUIDANCE_SCHEMA_V1, HOTSPOTS_SCHEMA_V1,
     HotspotsDocument, MANIFEST_SCHEMA_V1, METRICS_SCHEMA_V1, MetricSummary, MetricsDocument,
-    SCENARIO_EVIDENCE_SCHEMA_V1, ScenarioEvidence, SourceIdentity, ValidationReport,
+    SCENARIO_EVIDENCE_SCHEMA_V1, ScenarioEvidence, SourceIdentity, Target, TargetEvidence,
+    ValidationReport,
 };
 use crate::digest::{sha256_bytes, sha256_file};
 use crate::native_perf::{
@@ -30,7 +37,15 @@ const REQUIRED_ARTIFACTS: [(&str, &str); 5] = [
     ("hotspots.json", "application/json"),
     ("agent-guidance.json", "application/json"),
 ];
-const OPTIONAL_ARTIFACTS: [(&str, &str); 1] = [(RAW_REPORT_ARTIFACT, RAW_REPORT_MEDIA_TYPE)];
+const OPTIONAL_ARTIFACTS: [(&str, &str); 5] = [
+    (crate::http_workload::ARTIFACT, "application/json"),
+    (RAW_REPORT_ARTIFACT, RAW_REPORT_MEDIA_TYPE),
+    (RAW_TRACE_ARTIFACT, RAW_TRACE_MEDIA_TYPE),
+    (TRACE_SUMMARY_ARTIFACT, TRACE_SUMMARY_MEDIA_TYPE),
+    (BROWSER_RUNTIME_ARTIFACT, BROWSER_RUNTIME_MEDIA_TYPE),
+];
+const MAX_BROWSER_GUIDANCE_PER_KIND: usize = 3;
+const MAX_BROWSER_GUIDANCE_LABEL_CHARS: usize = 120;
 
 #[derive(Serialize)]
 struct EnvironmentFingerprintInput<'a> {
@@ -53,7 +68,23 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
     ensure_not_interrupted()?;
     let environment = detect_environment()?;
     ensure_not_interrupted()?;
-    let metrics = capture_metrics(&scenario)?;
+
+    let (metrics, http_capture) = match scenario.scenario.target {
+        Target::Command { .. } => (capture_metrics(&scenario)?, None),
+        Target::HttpWorkload { .. } => {
+            let (metrics, evidence) = crate::http_workload::capture_http(&scenario)?;
+            (metrics, Some(evidence))
+        }
+        Target::BrowserJourney { .. } => (
+            MetricsDocument {
+                schema_version: METRICS_SCHEMA_V1.to_owned(),
+                scenario_id: scenario.scenario.id.clone(),
+                samples: Vec::new(),
+                metrics: Vec::new(),
+            },
+            None,
+        ),
+    };
     ensure_not_interrupted()?;
 
     let (hotspots, raw_native_perf_report) = if scenario
@@ -68,7 +99,7 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
             HotspotsDocument {
                 schema_version: HOTSPOTS_SCHEMA_V1.to_owned(),
                 status: "not-collected".to_owned(),
-                reason: "No source-level profiler adapter was requested by this v1 scenario"
+                reason: "No native source-level profiler adapter was requested by this scenario"
                     .to_owned(),
                 collector: None,
                 tool_version: None,
@@ -88,22 +119,36 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
             None,
         )
     };
-    let guidance = build_guidance(&metrics, &hotspots);
     ensure_not_interrupted()?;
 
+    let browser_capture = if scenario
+        .scenario
+        .collectors
+        .contains(&Collector::BrowserChromium)
+    {
+        Some(capture_browser_chromium(&scenario)?)
+    } else {
+        None
+    };
+    ensure_not_interrupted()?;
+
+    let guidance = build_guidance(
+        &metrics,
+        &hotspots,
+        browser_capture.as_ref().map(|capture| &capture.summary),
+    );
     fs::create_dir_all(output)
         .with_context(|| format!("failed to create bundle directory: {}", output.display()))?;
     ensure_not_interrupted()?;
+
     write_json(&output.join("scenario.json"), &scenario.evidence())?;
-    ensure_not_interrupted()?;
     write_json(&output.join("environment.json"), &environment)?;
-    ensure_not_interrupted()?;
     write_json(&output.join("metrics.json"), &metrics)?;
-    ensure_not_interrupted()?;
     write_json(&output.join("hotspots.json"), &hotspots)?;
-    ensure_not_interrupted()?;
     write_json(&output.join("agent-guidance.json"), &guidance)?;
-    ensure_not_interrupted()?;
+    if let Some(evidence) = &http_capture {
+        write_json(&output.join(crate::http_workload::ARTIFACT), evidence)?;
+    }
     if let Some(report) = &raw_native_perf_report {
         fs::write(output.join(RAW_REPORT_ARTIFACT), report).with_context(|| {
             format!(
@@ -112,16 +157,22 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
             )
         })?;
     }
+    if let Some(capture) = &browser_capture {
+        fs::write(output.join(RAW_TRACE_ARTIFACT), &capture.trace).with_context(|| {
+            format!(
+                "failed to write Chromium trace: {}",
+                output.join(RAW_TRACE_ARTIFACT).display()
+            )
+        })?;
+        write_json(&output.join(TRACE_SUMMARY_ARTIFACT), &capture.summary)?;
+        write_json(&output.join(BROWSER_RUNTIME_ARTIFACT), &capture.runtime)?;
+    }
     ensure_not_interrupted()?;
 
-    let mut files = Vec::with_capacity(
-        REQUIRED_ARTIFACTS.len()
-            + if raw_native_perf_report.is_some() {
-                1
-            } else {
-                0
-            },
-    );
+    let optional_count = usize::from(http_capture.is_some())
+        + usize::from(raw_native_perf_report.is_some())
+        + if browser_capture.is_some() { 3 } else { 0 };
+    let mut files = Vec::with_capacity(REQUIRED_ARTIFACTS.len() + optional_count);
     for (path, media_type) in REQUIRED_ARTIFACTS {
         ensure_not_interrupted()?;
         files.push(ArtifactEntry {
@@ -131,11 +182,35 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         });
     }
     if raw_native_perf_report.is_some() {
-        files.push(ArtifactEntry {
-            path: RAW_REPORT_ARTIFACT.to_owned(),
-            media_type: RAW_REPORT_MEDIA_TYPE.to_owned(),
-            sha256: sha256_file(&output.join(RAW_REPORT_ARTIFACT))?,
-        });
+        files.push(artifact_entry(
+            output,
+            RAW_REPORT_ARTIFACT,
+            RAW_REPORT_MEDIA_TYPE,
+        )?);
+    }
+    if browser_capture.is_some() {
+        files.push(artifact_entry(
+            output,
+            RAW_TRACE_ARTIFACT,
+            RAW_TRACE_MEDIA_TYPE,
+        )?);
+        files.push(artifact_entry(
+            output,
+            TRACE_SUMMARY_ARTIFACT,
+            TRACE_SUMMARY_MEDIA_TYPE,
+        )?);
+        files.push(artifact_entry(
+            output,
+            BROWSER_RUNTIME_ARTIFACT,
+            BROWSER_RUNTIME_MEDIA_TYPE,
+        )?);
+    }
+    if http_capture.is_some() {
+        files.push(artifact_entry(
+            output,
+            crate::http_workload::ARTIFACT,
+            "application/json",
+        )?);
     }
     ensure_not_interrupted()?;
 
@@ -160,11 +235,17 @@ pub fn capture_bundle(scenario_path: &Path, output: &Path) -> Result<BundleManif
         source: environment.source,
         files,
     };
-    ensure_not_interrupted()?;
     write_json(&output.join("manifest.json"), &manifest)?;
     ensure_not_interrupted()?;
-
     Ok(manifest)
+}
+
+fn artifact_entry(output: &Path, path: &str, media_type: &str) -> Result<ArtifactEntry> {
+    Ok(ArtifactEntry {
+        path: path.to_owned(),
+        media_type: media_type.to_owned(),
+        sha256: sha256_file(&output.join(path))?,
+    })
 }
 
 pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
@@ -258,16 +339,34 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
         ));
     }
     validate_hotspot_artifacts(&scenario, &manifest, &hotspots, &mut diagnostics);
+    validate_browser_artifacts(bundle, &scenario, &manifest, &metrics, &mut diagnostics)?;
+    let http_present = manifest
+        .files
+        .iter()
+        .any(|artifact| artifact.path == crate::http_workload::ARTIFACT);
+    if scenario.collectors.contains(&Collector::HttpCurl) {
+        if !http_present {
+            diagnostics.push("HTTP workload is missing its measurement artifact".to_owned());
+        } else {
+            let evidence: crate::http_workload::HttpEvidence =
+                read_json(&bundle.join(crate::http_workload::ARTIFACT))?;
+            if let Err(error) =
+                crate::http_workload::validate_evidence(&scenario, &evidence, &metrics)
+            {
+                diagnostics.push(format!("invalid HTTP workload evidence: {error}"));
+            }
+        }
+    } else if http_present || matches!(scenario.target, TargetEvidence::HttpWorkload { .. }) {
+        diagnostics.push("HTTP workload evidence requires the http-curl collector".to_owned());
+    }
 
-    let report = ValidationReport {
+    Ok(ValidationReport {
         schema_version: "runtime-profiler/validation/v1".to_owned(),
         bundle_id: manifest.bundle_id,
         valid: diagnostics.is_empty(),
         verified_files,
         diagnostics,
-    };
-
-    Ok(report)
+    })
 }
 
 fn validate_artifact_set(manifest: &BundleManifest, diagnostics: &mut Vec<String>) {
@@ -351,15 +450,72 @@ fn validate_hotspot_artifacts(
     } else {
         if raw_report_present {
             diagnostics.push(
-                "process-only scenario unexpectedly contains native-perf raw evidence".to_owned(),
+                "non-native scenario unexpectedly contains native-perf raw evidence".to_owned(),
             );
         }
         if hotspots.status == "collected" || hotspots.collector.is_some() {
             diagnostics.push(
-                "process-only scenario unexpectedly claims collected hotspot evidence".to_owned(),
+                "non-native scenario unexpectedly claims collected native hotspot evidence"
+                    .to_owned(),
             );
         }
     }
+}
+
+fn validate_browser_artifacts(
+    bundle: &Path,
+    scenario: &ScenarioEvidence,
+    manifest: &BundleManifest,
+    metrics: &MetricsDocument,
+    diagnostics: &mut Vec<String>,
+) -> Result<()> {
+    let browser_requested = scenario.collectors.contains(&Collector::BrowserChromium);
+    let browser_paths = [
+        RAW_TRACE_ARTIFACT,
+        TRACE_SUMMARY_ARTIFACT,
+        BROWSER_RUNTIME_ARTIFACT,
+    ];
+    let browser_presence =
+        browser_paths.map(|path| manifest.files.iter().any(|artifact| artifact.path == path));
+
+    if browser_requested {
+        if !matches!(scenario.target, TargetEvidence::BrowserJourney { .. }) {
+            diagnostics
+                .push("browser-chromium collector requires browser-journey evidence".to_owned());
+        }
+        if !browser_presence.iter().all(|present| *present) {
+            diagnostics
+                .push("browser journey is missing Chromium trace evidence artifacts".to_owned());
+            return Ok(());
+        }
+        if !metrics.metrics.is_empty() || !metrics.samples.is_empty() {
+            diagnostics.push(
+                "browser journey must not relabel Playwright driver process measurements as application metrics"
+                    .to_owned(),
+            );
+        }
+        let summary: ChromiumTraceSummary = read_json(&bundle.join(TRACE_SUMMARY_ARTIFACT))?;
+        if summary.schema_version != CHROMIUM_TRACE_SUMMARY_SCHEMA_V1 {
+            diagnostics.push(format!(
+                "unsupported Chromium trace summary schema: {}",
+                summary.schema_version
+            ));
+        }
+        let runtime: BrowserRuntimeDocument = read_json(&bundle.join(BROWSER_RUNTIME_ARTIFACT))?;
+        if runtime.schema_version != BROWSER_RUNTIME_SCHEMA_V1 {
+            diagnostics.push(format!(
+                "unsupported browser runtime schema: {}",
+                runtime.schema_version
+            ));
+        }
+        if let Err(error) = validate_runtime_metadata(&runtime) {
+            diagnostics.push(format!("invalid browser runtime metadata: {error}"));
+        }
+    } else if browser_presence.iter().any(|present| *present) {
+        diagnostics
+            .push("non-browser scenario unexpectedly contains browser trace evidence".to_owned());
+    }
+    Ok(())
 }
 
 pub fn summarize_bundle(bundle: &Path) -> Result<MetricsDocument> {
@@ -395,7 +551,11 @@ pub fn render_agent_guidance(bundle: &Path) -> Result<String> {
     Ok(output)
 }
 
-fn build_guidance(metrics: &MetricsDocument, hotspots: &HotspotsDocument) -> AgentGuidance {
+fn build_guidance(
+    metrics: &MetricsDocument,
+    hotspots: &HotspotsDocument,
+    browser_summary: Option<&ChromiumTraceSummary>,
+) -> AgentGuidance {
     let mut observations: Vec<AgentObservation> = metrics
         .metrics
         .iter()
@@ -430,26 +590,98 @@ fn build_guidance(metrics: &MetricsDocument, hotspots: &HotspotsDocument) -> Age
         }));
     }
 
+    if let Some(summary) = browser_summary {
+        observations.extend(
+            summary
+                .long_tasks
+                .iter()
+                .take(MAX_BROWSER_GUIDANCE_PER_KIND)
+                .map(|task| AgentObservation {
+                    id: task.id.clone(),
+                    summary: format!(
+                        "Observed Chromium long task `{}` lasting {} us on the renderer main thread ({})",
+                        bounded_guidance_label(&task.name),
+                        task.duration_us,
+                        task.runtime_kind
+                    ),
+                    evidence_ref: task.evidence_ref.clone(),
+                }),
+        );
+        observations.extend(
+            summary
+                .hot_paths
+                .iter()
+                .take(MAX_BROWSER_GUIDANCE_PER_KIND)
+                .map(|path| {
+                    let leaf = path
+                        .frames
+                        .last()
+                        .map(|frame| bounded_guidance_label(&frame.name))
+                        .unwrap_or_else(|| "unknown".to_owned());
+                    AgentObservation {
+                        id: path.id.clone(),
+                        summary: format!(
+                            "Observed Chromium hot path ending at `{leaf}` with {} occurrences, {} us total inclusive duration, and {} us maximum inclusive duration ({})",
+                            path.occurrences,
+                            path.total_duration_us,
+                            path.max_duration_us,
+                            path.leaf_runtime_kind
+                        ),
+                        evidence_ref: path.evidence_ref.clone(),
+                    }
+                }),
+        );
+        observations.extend(
+            summary
+                .boundary_markers
+                .iter()
+                .take(MAX_BROWSER_GUIDANCE_PER_KIND)
+                .map(|marker| AgentObservation {
+                    id: marker.id.clone(),
+                    summary: format!(
+                        "Observed Chromium {} boundary marker `{}` {} times with {} us total instrumented-section duration and {} us maximum instrumented-section duration",
+                        marker.direction,
+                        bounded_guidance_label(&marker.label),
+                        marker.occurrences,
+                        marker.total_duration_us,
+                        marker.max_duration_us
+                    ),
+                    evidence_ref: marker.evidence_ref.clone(),
+                }),
+        );
+    }
+
+    let mut constraints = vec![
+        "This bundle describes one version; it does not establish improvement or regression."
+            .to_owned(),
+        "Use Moonlight to compare a baseline and candidate with matching scenario digests."
+            .to_owned(),
+        "Treat cross-environment comparisons as inconclusive unless policy explicitly permits them."
+            .to_owned(),
+        "Profiler hotspots are sampled-cost correlations, not proof of semantic root cause."
+            .to_owned(),
+    ];
+    let mut evidence_refs = vec![
+        "manifest.json".to_owned(),
+        "environment.json".to_owned(),
+        "metrics.json".to_owned(),
+        "hotspots.json".to_owned(),
+    ];
+    if browser_summary.is_some() {
+        constraints.push(
+            "Chromium trace summaries are descriptive inclusive timing evidence; explicit JS/WASM boundary markers measure instrumented sections rather than inferred marshaling cost."
+                .to_owned(),
+        );
+        evidence_refs.push(TRACE_SUMMARY_ARTIFACT.to_owned());
+        evidence_refs.push(BROWSER_RUNTIME_ARTIFACT.to_owned());
+    }
+
     AgentGuidance {
         schema_version: GUIDANCE_SCHEMA_V1.to_owned(),
         scenario_id: metrics.scenario_id.clone(),
         observations,
-        constraints: vec![
-            "This bundle describes one version; it does not establish improvement or regression."
-                .to_owned(),
-            "Use Moonlight to compare a baseline and candidate with matching scenario digests."
-                .to_owned(),
-            "Treat cross-environment comparisons as inconclusive unless policy explicitly permits them."
-                .to_owned(),
-            "Profiler hotspots are sampled-cost correlations, not proof of semantic root cause."
-                .to_owned(),
-        ],
-        evidence_refs: vec![
-            "manifest.json".to_owned(),
-            "environment.json".to_owned(),
-            "metrics.json".to_owned(),
-            "hotspots.json".to_owned(),
-        ],
+        constraints,
+        evidence_refs,
     }
 }
 
@@ -465,6 +697,24 @@ fn summarize_metric(metric: &MetricSummary) -> String {
         metric.unit,
         metric.statistics.sample_count
     )
+}
+
+fn bounded_guidance_label(value: &str) -> String {
+    let mut chars = value.chars().map(|ch| {
+        if ch.is_control() || ch == '`' {
+            ' '
+        } else {
+            ch
+        }
+    });
+    let mut result: String = chars
+        .by_ref()
+        .take(MAX_BROWSER_GUIDANCE_LABEL_CHARS)
+        .collect();
+    if chars.next().is_some() {
+        result.push('…');
+    }
+    result
 }
 
 fn detect_environment() -> Result<EnvironmentDocument> {
@@ -540,6 +790,10 @@ fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chromium_trace::{
+        ChromiumBoundaryMarker, ChromiumHotPath, ChromiumHotPathFrame, ChromiumLongTask,
+        ChromiumMainThread,
+    };
 
     fn test_environment(source: SourceIdentity) -> EnvironmentDocument {
         EnvironmentDocument {
@@ -551,6 +805,102 @@ mod tests {
             kernel_release: Some("6.12.0".to_owned()),
             logical_cpu_count: 8,
             source,
+        }
+    }
+
+    fn empty_metrics() -> MetricsDocument {
+        MetricsDocument {
+            schema_version: METRICS_SCHEMA_V1.to_owned(),
+            scenario_id: "browser-scenario".to_owned(),
+            samples: Vec::new(),
+            metrics: Vec::new(),
+        }
+    }
+
+    fn empty_hotspots() -> HotspotsDocument {
+        HotspotsDocument {
+            schema_version: HOTSPOTS_SCHEMA_V1.to_owned(),
+            status: "not-collected".to_owned(),
+            reason: "not requested".to_owned(),
+            collector: None,
+            tool_version: None,
+            event: None,
+            metric: None,
+            unit: None,
+            sample_period: None,
+            symbolization_mode: None,
+            target_toolchain_kind: None,
+            target_toolchain_fingerprint_schema_version: None,
+            target_toolchain_fingerprint: None,
+            total_weight: 0,
+            total_samples: 0,
+            truncated: false,
+            hotspots: Vec::new(),
+        }
+    }
+
+    fn browser_summary() -> ChromiumTraceSummary {
+        ChromiumTraceSummary {
+            schema_version: CHROMIUM_TRACE_SUMMARY_SCHEMA_V1.to_owned(),
+            trace_event_count: 10,
+            main_thread: ChromiumMainThread {
+                process_id: 1,
+                thread_id: 2,
+                name: "CrRendererMain".to_owned(),
+            },
+            top_level_task_count: 4,
+            top_level_duration_us: 400_000,
+            long_task_count: 4,
+            long_task_total_duration_us: 400_000,
+            longest_task_us: Some(130_000),
+            long_tasks_truncated: false,
+            long_tasks: (0_u64..4)
+                .map(|index| ChromiumLongTask {
+                    id: format!("long-{index}"),
+                    name: if index == 0 {
+                        "Task\n`untrusted`".to_owned()
+                    } else {
+                        format!("Task-{index}")
+                    },
+                    category: "toplevel".to_owned(),
+                    start_us: index * 100_000,
+                    duration_us: 100_000 + index,
+                    runtime_kind: "javascript".to_owned(),
+                    evidence_ref: format!("chromium-trace-summary.json#long-{index}"),
+                })
+                .collect(),
+            hot_path_count: 4,
+            hot_paths_truncated: false,
+            hot_path_depth_truncated: false,
+            hot_paths: (0_u64..4)
+                .map(|index| ChromiumHotPath {
+                    id: format!("hot-{index}"),
+                    frames: vec![ChromiumHotPathFrame {
+                        name: format!("Leaf-{index}"),
+                        category: "v8".to_owned(),
+                    }],
+                    leaf_runtime_kind: "javascript".to_owned(),
+                    total_duration_us: 50_000 + index,
+                    max_duration_us: 20_000 + index,
+                    occurrences: 2 + index,
+                    evidence_ref: format!("chromium-trace-summary.json#hot-{index}"),
+                })
+                .collect(),
+            runtime_attribution: Vec::new(),
+            boundary_marker_count: 4,
+            boundary_markers_truncated: false,
+            boundary_markers: (0_u64..4)
+                .map(|index| ChromiumBoundaryMarker {
+                    id: format!("boundary-{index}"),
+                    direction: "js-to-wasm".to_owned(),
+                    label: format!("boundary-{index}"),
+                    total_duration_us: 1_000 + index,
+                    max_duration_us: 500 + index,
+                    occurrences: 1 + index,
+                    evidence_ref: format!("chromium-trace-summary.json#boundary-{index}"),
+                })
+                .collect(),
+            limitations: Vec::new(),
         }
     }
 
@@ -650,5 +1000,62 @@ mod tests {
         assert!(hotspots.collector.is_none());
         assert!(hotspots.sample_period.is_none());
         assert!(hotspots.target_toolchain_fingerprint.is_none());
+    }
+
+    #[test]
+    fn browser_guidance_is_bounded_sanitized_and_normalized() {
+        let guidance = build_guidance(
+            &empty_metrics(),
+            &empty_hotspots(),
+            Some(&browser_summary()),
+        );
+
+        assert_eq!(guidance.observations.len(), 9);
+        assert_eq!(
+            guidance
+                .observations
+                .iter()
+                .filter(|observation| observation.id.starts_with("long-"))
+                .count(),
+            MAX_BROWSER_GUIDANCE_PER_KIND
+        );
+        assert!(
+            guidance
+                .observations
+                .iter()
+                .all(|observation| observation.evidence_ref.starts_with(TRACE_SUMMARY_ARTIFACT))
+        );
+        assert!(
+            guidance
+                .observations
+                .iter()
+                .all(|observation| !observation.summary.contains('\n'))
+        );
+        assert!(
+            guidance
+                .observations
+                .iter()
+                .all(|observation| !observation.summary.contains("`untrusted`"))
+        );
+        assert!(guidance.observations.iter().any(|observation| {
+            observation
+                .summary
+                .contains("instrumented-section duration")
+        }));
+        assert!(
+            guidance
+                .evidence_refs
+                .contains(&TRACE_SUMMARY_ARTIFACT.to_owned())
+        );
+        assert!(
+            guidance
+                .evidence_refs
+                .contains(&BROWSER_RUNTIME_ARTIFACT.to_owned())
+        );
+        assert!(
+            !guidance
+                .evidence_refs
+                .contains(&RAW_TRACE_ARTIFACT.to_owned())
+        );
     }
 }

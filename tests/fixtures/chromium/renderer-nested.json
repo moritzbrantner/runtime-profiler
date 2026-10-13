@@ -1,0 +1,72 @@
+{
+  "traceEvents": [
+    {
+      "ph": "M",
+      "name": "thread_name",
+      "pid": 1,
+      "tid": 10,
+      "args": { "name": "CrRendererMain" }
+    },
+    {
+      "ph": "M",
+      "name": "thread_name",
+      "pid": 1,
+      "tid": 11,
+      "args": { "name": "DedicatedWorker thread" }
+    },
+    {
+      "ph": "X",
+      "name": "RunTask",
+      "cat": "toplevel",
+      "pid": 1,
+      "tid": 10,
+      "ts": 0,
+      "dur": 100000
+    },
+    {
+      "ph": "X",
+      "name": "FunctionCall",
+      "cat": "v8",
+      "pid": 1,
+      "tid": 10,
+      "ts": 1000,
+      "dur": 30000
+    },
+    {
+      "ph": "X",
+      "name": "WebAssembly.execute",
+      "cat": "v8.wasm",
+      "pid": 1,
+      "tid": 10,
+      "ts": 5000,
+      "dur": 10000
+    },
+    {
+      "ph": "X",
+      "name": "runtime-profiler:js-to-wasm:update-map",
+      "cat": "blink.user_timing",
+      "pid": 1,
+      "tid": 10,
+      "ts": 20000,
+      "dur": 2000
+    },
+    {
+      "ph": "X",
+      "name": "runtime-profiler:wasm-to-js:result-copy",
+      "cat": "blink.user_timing",
+      "pid": 1,
+      "tid": 10,
+      "ts": 25000,
+      "dur": 1000
+    },
+    {
+      "ph": "X",
+      "name": "WorkerTaskMustBeExcluded",
+      "cat": "toplevel",
+      "pid": 1,
+      "tid": 11,
+      "ts": 0,
+      "dur": 90000
+    }
+  ]
+}

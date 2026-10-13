@@ -1,0 +1,6 @@
+{
+  "schema_version": "runtime-profiler/hotspots/v1",
+  "status": "not-collected",
+  "reason": "native-perf was not requested",
+  "hotspots": []
+}

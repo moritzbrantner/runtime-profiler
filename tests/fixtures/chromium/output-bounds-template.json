@@ -1,0 +1,27 @@
+{
+  "metadata": {
+    "ph": "M",
+    "name": "thread_name",
+    "pid": 4,
+    "tid": 40,
+    "args": { "name": "CrRendererMain" }
+  },
+  "longTask": {
+    "ph": "X",
+    "name": "LongTemplate",
+    "cat": "toplevel",
+    "pid": 4,
+    "tid": 40,
+    "ts": 0,
+    "dur": 60000
+  },
+  "boundaryMarker": {
+    "ph": "X",
+    "name": "runtime-profiler:js-to-wasm:template",
+    "cat": "blink.user_timing",
+    "pid": 4,
+    "tid": 40,
+    "ts": 0,
+    "dur": 1
+  }
+}
