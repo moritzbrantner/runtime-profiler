@@ -27,6 +27,8 @@ The outer capture still compares parent and candidate bundles only when their sc
 - values below `100` expose proportional retention loss;
 - signed metric changes preserve direction and magnitude.
 
+Each metric in a history entry records its `unit` (`null` when the score report omits it), and each statistic records its absolute `reference` and `candidate` values alongside `score` and `change_percent` (`null` when a value is not a finite number). This is an additive change within `runtime-profiler/score-history/v1`; it lets consumers such as `coding-tooling` read the latest absolute value of a statistic, for example the p95 wall time, without re-deriving it from the signed change.
+
 The history entry also retains `scenario_digest`, `environment_fingerprint`, and `workload_digest`. Pages only joins chart points from the latest matching scenario/workload cohort, so a workload revision cannot silently continue an older series.
 
 ## Hosted-runner boundary
