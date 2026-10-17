@@ -2332,6 +2332,88 @@
         }
       ],
       "reason": null
+    },
+    {
+      "commit": "e7829dd18852e71d8ab0aa14718c4d14ae28b189",
+      "parent_commit": "5223e9d0d6fe7e6795e0ce5ea6ce7726f11f0ced",
+      "timestamp": "2026-10-17T11:55:52+02:00",
+      "status": "scored",
+      "score": 100,
+      "rating": "good",
+      "average_change_percent": 0.026,
+      "scenario_id": "runtime-profiler-history-self-score-v1",
+      "scenario_digest": "3c0f5cc149bb6f5081014d314a755866639a6ab9d28f9118098ef97d6ca46f87",
+      "environment_fingerprint_schema_version": "runtime-profiler/environment-fingerprint/v1",
+      "environment_fingerprint": "e75d56dcc249b001a87a06cfedc74356979b28ec5efb7d1edaf7a2c9f75c8ccc",
+      "workload_digest": "sha256:e99b2e5e92ac0ce41535a0a6b660f112320b47281a0a82142573807ef281311c",
+      "metrics": [
+        {
+          "id": "process.max_observed_rss",
+          "unit": "KiB",
+          "score": 100,
+          "average_change_percent": 0,
+          "statistics": [
+            {
+              "statistic": "median",
+              "score": 100,
+              "change_percent": 0,
+              "reference": 12,
+              "candidate": 12
+            },
+            {
+              "statistic": "p95",
+              "score": 100,
+              "change_percent": 0,
+              "reference": 12,
+              "candidate": 12
+            }
+          ]
+        },
+        {
+          "id": "process.success_rate",
+          "unit": "ratio",
+          "score": 100,
+          "average_change_percent": 0,
+          "statistics": [
+            {
+              "statistic": "mean",
+              "score": 100,
+              "change_percent": 0,
+              "reference": 1,
+              "candidate": 1
+            }
+          ]
+        },
+        {
+          "id": "process.wall_time",
+          "unit": "ms",
+          "score": 100,
+          "average_change_percent": 0.079,
+          "statistics": [
+            {
+              "statistic": "median",
+              "score": 100,
+              "change_percent": 0.041,
+              "reference": 5.188655000000001,
+              "candidate": 5.186502
+            },
+            {
+              "statistic": "p95",
+              "score": 100,
+              "change_percent": 0.116,
+              "reference": 5.206101,
+              "candidate": 5.200082
+            }
+          ]
+        }
+      ],
+      "excluded_metrics": [
+        {
+          "id": "process.max_rss",
+          "reason": "compatibility alias of process.max_observed_rss; excluded to avoid double-weighting"
+        }
+      ],
+      "reason": null
     }
   ]
 }
