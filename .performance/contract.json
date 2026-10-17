@@ -16,7 +16,32 @@
           "blocking": false
         }
       ],
-      "controlled": { "history": { "branch": "score-history", "path": "history.json" } }
+      "controlled": {
+        "history": {
+          "branch": "score-history",
+          "path": "history.json"
+        }
+      }
+    }
+  ],
+  "operations": [
+    {
+      "id": "runtime-profiler-history-self-score",
+      "description": "Score runtime-profiler's own parent-relative history workload.",
+      "dimensions": {
+        "runs": {}
+      },
+      "scalePoints": [
+        {
+          "runs": 1
+        }
+      ],
+      "latency": {
+        "scenario": "runtime-profiler-history-self-score-v1",
+        "metric": "process.wall_time",
+        "statistic": "p95",
+        "maxMs": 8
+      }
     }
   ]
 }
