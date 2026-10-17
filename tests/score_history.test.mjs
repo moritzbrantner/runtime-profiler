@@ -77,18 +77,22 @@ test("runtime history stores parent-relative score and signed changes", () => {
     metrics: [
       {
         id: "process.wall_time",
+        unit: "ms",
         score: 96,
         average_change_percent: -2.5,
         statistics: [
-          { statistic: "median", score: 95, change_percent: -5 },
-          { statistic: "p95", score: 100, change_percent: 0 },
+          { statistic: "median", score: 95, change_percent: -5, reference: 10, candidate: 10.5 },
+          { statistic: "p95", score: 100, change_percent: 0, reference: 12, candidate: 12 },
         ],
       },
       {
         id: "process.success_rate",
+        unit: "ratio",
         score: 100,
         average_change_percent: 0,
-        statistics: [{ statistic: "mean", score: 100, change_percent: 0 }],
+        statistics: [
+          { statistic: "mean", score: 100, change_percent: 0, reference: 1, candidate: 1 },
+        ],
       },
     ],
     excluded_metrics: [],
@@ -122,3 +126,19 @@ test("runtime history requires explicit workload identity", () => {
     /workload_digest/,
   );
 });
+
+test("runtime history keeps absolute statistic values and units, null when not finite", () => {
+  const input = score();
+  input.metrics[0].statistics[0].candidate = "fast";
+  delete input.metrics[0].statistics[1].reference;
+  delete input.metrics[1].unit;
+  const history = appendRuntimeScoreHistory(null, input, metadata);
+  const [wall, success] = history.entries[0].metrics;
+
+  assert.equal(wall.statistics[0].candidate, null);
+  assert.equal(wall.statistics[0].reference, 10);
+  assert.equal(wall.statistics[1].reference, null);
+  assert.equal(wall.statistics[1].candidate, 12);
+  assert.equal(success.unit, null);
+});
+
