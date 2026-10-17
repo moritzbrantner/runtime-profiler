@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 2,
+  "suite": "runtime-profiler/score-history",
+  "scenarios": [
+    {
+      "id": "runtime-profiler-history-self-score-v1",
+      "kind": "common",
+      "description": "runtime-profiler scoring its own parent-relative history workload in the score-history workflow",
+      "dimensions": {},
+      "metrics": [
+        {
+          "name": "process.wall_time",
+          "unit": "ms",
+          "direction": "lower",
+          "signal": "wall-clock",
+          "blocking": false
+        }
+      ],
+      "controlled": { "history": { "branch": "score-history", "path": "history.json" } }
+    }
+  ]
+}
