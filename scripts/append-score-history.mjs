@@ -24,9 +24,12 @@ function metricSnapshot(metric) {
     statistic: statistic.statistic,
     score: statistic.score,
     change_percent: Number.isFinite(statistic.change_percent) ? statistic.change_percent : null,
+    reference: Number.isFinite(statistic.reference) ? statistic.reference : null,
+    candidate: Number.isFinite(statistic.candidate) ? statistic.candidate : null,
   }));
   return {
     id: metric.id,
+    unit: metric.unit ?? null,
     score: metric.score,
     average_change_percent: average(statistics.map((statistic) => statistic.change_percent)),
     statistics,
