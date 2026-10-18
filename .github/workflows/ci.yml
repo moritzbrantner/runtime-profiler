@@ -77,3 +77,14 @@ jobs:
           cargo run --locked -- render-agent-guidance --bundle target/smoke-bundle
           cargo run --locked -- evidence-reference --bundle target/smoke-bundle --uri .agent-loop/evidence/runtime-profiler/smoke-bundle > target/smoke-evidence-reference.json
           python3 scripts/check_contracts.py --evidence-reference target/smoke-evidence-reference.json
+
+  merge-ready:
+    name: merge-ready
+    if: ${{ always() }}
+    needs: ["findings", "tooling-fast", "verify"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@b0f25f241d76af2584dfc9e375084ff5c5cb97da
+        with:
+          needs: ${{ toJSON(needs) }}
+          required: '["findings", "tooling-fast", "verify"]'
