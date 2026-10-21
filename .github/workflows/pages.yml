@@ -77,7 +77,7 @@ jobs:
     with:
       node_version: "24"
       bun_version: ""
-      install_command: "npm ci --ignore-scripts --no-audit --no-fund"
+      install_command: "npm ci --no-audit --no-fund"
       build_command: "npm run build:pages"
       artifact_path: dist
       cache_bun: false
