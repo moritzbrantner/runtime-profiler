@@ -42,7 +42,7 @@ test -f dist/assets/evidence-source.js
 
 grep -Fq 'Inspect a public profiler bundle.' dist/index.html
 grep -Fq 'See what the profiler measured.' dist/results/index.html
-grep -Fq 'Evidence revision' dist/assets/site-runtime.js
+grep -Fq 'Evidence revision' dist/assets/site-localization.js
 grep -Fq 'repository-identity-mismatch' dist/assets/evidence-source.js
 
 node -e "const fs=require('node:fs'); const m=JSON.parse(fs.readFileSync('dist/project-pages.json','utf8')); if (m.mode !== 'augment' || m.generatedFrom !== 'moritzbrantner/runtime-profiler' || m.managedPaths.includes('index.html')) process.exit(1);"
