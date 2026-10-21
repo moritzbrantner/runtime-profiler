@@ -7,7 +7,18 @@ use sha2::{Digest, Sha256};
 
 #[must_use]
 pub fn sha256_bytes(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    lower_hex(&Sha256::digest(bytes))
+}
+
+/// Lowercase hex of a digest; sha2 0.11 output no longer implements `LowerHex`.
+fn lower_hex(digest: &[u8]) -> String {
+    use std::fmt::Write;
+    digest
+        .iter()
+        .fold(String::with_capacity(digest.len() * 2), |mut out, byte| {
+            let _ = write!(out, "{byte:02x}");
+            out
+        })
 }
 
 pub fn sha256_file(path: &Path) -> Result<String> {
@@ -28,5 +39,5 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     }
 
     let digest = hasher.finalize();
-    Ok(format!("{digest:x}"))
+    Ok(lower_hex(&digest))
 }
