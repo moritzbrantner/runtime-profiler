@@ -75,7 +75,7 @@ jobs:
       pages: write
     uses: moritzbrantner/reusable-workflows/.github/workflows/deploy-pages.yml@fd22697af1dfc42e4b8d66e222e1a7c415da2be0
     with:
-      node_version: "24"
+      node_version: lts/*
       bun_version: ""
       install_command: "npm ci --no-audit --no-fund"
       build_command: "npm run build:pages"
