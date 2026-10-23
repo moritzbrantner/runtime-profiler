@@ -45,7 +45,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
-          node-version: "24"
+          node-version: lts/*
 
       - name: Install Pages dependencies
         run: npm ci --no-audit --no-fund
@@ -53,7 +53,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # immutable action revision
         with:
-          toolchain: "1.99.1"
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Install contract validation dependencies
