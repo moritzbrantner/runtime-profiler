@@ -165,10 +165,12 @@ pub fn analyze_chromium_trace_bytes(bytes: &[u8]) -> Result<ChromiumTraceSummary
             .then_with(|| left.category.cmp(&right.category))
     });
 
+    let boundary_pairs = parse_main_thread_boundary_pairs(&events, &main_thread)?;
     Ok(summarize_complete_events(
         events.len(),
         main_thread,
         &complete_events,
+        &boundary_pairs,
     ))
 }
 
@@ -274,7 +276,6 @@ fn parse_main_thread_complete_events(
             duration_us,
         });
     }
-    result.extend(parse_main_thread_boundary_pairs(events, main_thread)?);
     Ok(result)
 }
 
@@ -370,6 +371,7 @@ fn summarize_complete_events(
     trace_event_count: usize,
     main_thread: ChromiumMainThread,
     events: &[TraceEvent],
+    boundary_pairs: &[TraceEvent],
 ) -> ChromiumTraceSummary {
     let mut stack: Vec<usize> = Vec::new();
     let mut top_level_task_count = 0_usize;
@@ -384,6 +386,28 @@ fn summarize_complete_events(
     let mut runtime_aggregates: BTreeMap<String, (u64, u64)> = BTreeMap::new();
     let mut boundary_aggregates: BTreeMap<(String, String), BoundaryAggregate> = BTreeMap::new();
     let mut boundary_markers_truncated = false;
+
+    // Async measures describe elapsed instrumented sections, which may include
+    // waits. They contribute boundary evidence only, never task/hot-path work.
+    for event in events.iter().chain(boundary_pairs) {
+        if let Some((direction, label)) = parse_boundary_marker(&event.name) {
+            let key = (direction.to_owned(), label.to_owned());
+            if boundary_aggregates.len() < MAX_UNIQUE_BOUNDARY_MARKERS
+                || boundary_aggregates.contains_key(&key)
+            {
+                let entry = boundary_aggregates
+                    .entry(key)
+                    .or_insert_with(|| BoundaryAggregate {
+                        direction: direction.to_owned(),
+                        label: label.to_owned(),
+                        aggregate: Aggregate::default(),
+                    });
+                update_aggregate(&mut entry.aggregate, event.duration_us);
+            } else {
+                boundary_markers_truncated = true;
+            }
+        }
+    }
 
     for (index, event) in events.iter().enumerate() {
         while let Some(parent_index) = stack.last().copied() {
@@ -416,24 +440,6 @@ fn summarize_complete_events(
             .or_insert((0, 0));
         entry.0 = entry.0.saturating_add(event.duration_us);
         entry.1 = entry.1.saturating_add(1);
-
-        if let Some((direction, label)) = parse_boundary_marker(&event.name) {
-            let key = (direction.to_owned(), label.to_owned());
-            if boundary_aggregates.len() < MAX_UNIQUE_BOUNDARY_MARKERS
-                || boundary_aggregates.contains_key(&key)
-            {
-                let entry = boundary_aggregates
-                    .entry(key)
-                    .or_insert_with(|| BoundaryAggregate {
-                        direction: direction.to_owned(),
-                        label: label.to_owned(),
-                        aggregate: Aggregate::default(),
-                    });
-                update_aggregate(&mut entry.aggregate, event.duration_us);
-            } else {
-                boundary_markers_truncated = true;
-            }
-        }
 
         let mut path = stack
             .iter()
@@ -840,6 +846,32 @@ mod tests {
             ]});
             assert!(analyze_chromium_trace_bytes(&serde_json::to_vec(&trace).unwrap()).is_err());
         }
+    }
+
+    #[test]
+    fn asynchronous_boundary_elapsed_time_is_not_renderer_main_work() {
+        let base = json!([
+            {"ph":"M","name":"thread_name","pid":1,"tid":2,"args":{"name":"CrRendererMain"}},
+            {"ph":"X","name":"Task","cat":"toplevel","pid":1,"tid":2,"ts":10,"dur":20}
+        ]);
+        let mut with_boundary = base.clone();
+        with_boundary.as_array_mut().unwrap().extend([
+            json!({"ph":"b","name":"runtime-profiler:js-to-wasm:awaited-operation","cat":"blink.user_timing","pid":1,"tid":2,"ts":0,"id2":{"local":"0x1"}}),
+            json!({"ph":"e","name":"runtime-profiler:js-to-wasm:awaited-operation","cat":"blink.user_timing","pid":1,"tid":2,"ts":100000,"id2":{"local":"0x1"}})
+        ]);
+        let baseline = analyze_chromium_trace_bytes(&serde_json::to_vec(&base).unwrap()).unwrap();
+        let summary =
+            analyze_chromium_trace_bytes(&serde_json::to_vec(&with_boundary).unwrap()).unwrap();
+        assert_eq!(summary.top_level_task_count, baseline.top_level_task_count);
+        assert_eq!(
+            summary.top_level_duration_us,
+            baseline.top_level_duration_us
+        );
+        assert_eq!(summary.long_task_count, baseline.long_task_count);
+        assert_eq!(summary.hot_paths, baseline.hot_paths);
+        assert_eq!(summary.runtime_attribution, baseline.runtime_attribution);
+        assert_eq!(summary.boundary_markers[0].occurrences, 1);
+        assert_eq!(summary.boundary_markers[0].total_duration_us, 100000);
     }
 
     #[test]
