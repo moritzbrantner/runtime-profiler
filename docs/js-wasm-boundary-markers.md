@@ -7,6 +7,8 @@
 
 `<label>` should identify the stable operation being instrumented, such as `update-map` or `result-copy`. Keep labels deterministic and independent of request IDs, user data, URLs, timestamps, or other per-run values.
 
+Real Chromium User Timing measures recorded as nestable asynchronous begin/end (`b`/`e`) pairs are normalized alongside complete (`X`) measures. Endpoints must match the renderer main thread, marker name, async ID kind/value and scope. Incomplete or ambiguous boundary pairs fail capture rather than silently reporting no boundary evidence. Other asynchronous trace events remain outside this normalization.
+
 ## What the duration means
 
 A boundary marker describes the duration of the instrumented section represented by that User Timing measure. It does not prove or isolate marshaling, copying, serialization, allocation, browser scheduling, or WebAssembly execution cost. Code inside the measured section can contribute to the duration, and nested Chromium event durations can overlap.
