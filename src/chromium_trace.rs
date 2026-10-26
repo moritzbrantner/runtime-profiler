@@ -274,7 +274,96 @@ fn parse_main_thread_complete_events(
             duration_us,
         });
     }
+    result.extend(parse_main_thread_boundary_pairs(events, main_thread)?);
     Ok(result)
+}
+
+// Real Chromium User Timing measures use nestable async begin/end events rather
+// than complete events. Pair only the explicit boundary convention, never infer
+// CPU work or boundary costs from arbitrary asynchronous browser activity.
+fn parse_main_thread_boundary_pairs(
+    events: &[Value],
+    main_thread: &ChromiumMainThread,
+) -> Result<Vec<TraceEvent>> {
+    let mut endpoints = Vec::new();
+    for event in events {
+        let phase = event.get("ph").and_then(Value::as_str).unwrap_or("");
+        if phase != "b" && phase != "e" {
+            continue;
+        }
+        let Some(name) = event.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        if parse_boundary_marker(name).is_none()
+            || event.get("cat").and_then(Value::as_str) != Some("blink.user_timing")
+            || integer_field_optional(event, "pid")? != Some(main_thread.process_id)
+            || integer_field_optional(event, "tid")? != Some(main_thread.thread_id)
+        {
+            continue;
+        }
+        let timestamp = nonnegative_us_field_optional(event, "ts")?
+            .context("boundary measure endpoint is missing a timestamp")?;
+        let identity = boundary_async_identity(event)?;
+        endpoints.push((
+            timestamp,
+            phase,
+            bounded_nonempty_text(name, "boundary name")?,
+            identity,
+        ));
+    }
+    // Trace storage order need not be temporal. Begins sort before ends at an
+    // equal timestamp so zero-duration measures remain valid.
+    endpoints.sort();
+    let mut pending = BTreeMap::new();
+    let mut result = Vec::new();
+    for (timestamp, phase, name, identity) in endpoints {
+        let key = (name, identity);
+        if phase == "b" {
+            ensure!(
+                pending.insert(key, timestamp).is_none(),
+                "duplicate boundary measure begin"
+            );
+        } else {
+            let start_us = pending
+                .remove(&key)
+                .context("boundary measure end has no matching begin")?;
+            result.push(TraceEvent {
+                name: key.0,
+                category: "blink.user_timing".to_owned(),
+                process_id: main_thread.process_id,
+                thread_id: main_thread.thread_id,
+                start_us,
+                duration_us: timestamp - start_us,
+            });
+        }
+    }
+    ensure!(
+        pending.is_empty(),
+        "boundary measure begin has no matching end"
+    );
+    Ok(result)
+}
+
+fn boundary_async_identity(event: &Value) -> Result<(String, String, String)> {
+    let (kind, id) = if let Some(id) = event.pointer("/id2/local") {
+        ("local", id)
+    } else if let Some(id) = event.pointer("/id2/global") {
+        ("global", id)
+    } else if let Some(id) = event.get("id") {
+        ("legacy", id)
+    } else {
+        bail!("boundary measure endpoint is missing an async id");
+    };
+    let id = match id {
+        Value::String(value) => bounded_nonempty_text(value, "boundary async id")?,
+        Value::Number(value) => value.to_string(),
+        _ => bail!("boundary async id must be a string or number"),
+    };
+    let scope = bounded_text(
+        event.get("scope").and_then(Value::as_str).unwrap_or(""),
+        "boundary async scope",
+    )?;
+    Ok((kind.to_owned(), id, scope))
 }
 
 fn summarize_complete_events(
@@ -718,6 +807,39 @@ mod tests {
         let bytes = serde_json::to_vec(&trace).expect("trace serialization");
         let error = analyze_chromium_trace_bytes(&bytes).expect_err("metadata must be required");
         assert!(error.to_string().contains("renderer-main-thread metadata"));
+    }
+
+    #[test]
+    fn real_chromium_user_timing_pairs_preserve_boundary_measures() {
+        let trace = json!({"traceEvents": [
+            {"ph":"M","name":"thread_name","pid":1,"tid":2,"args":{"name":"CrRendererMain"}},
+            {"ph":"X","name":"Task","cat":"toplevel","pid":1,"tid":2,"ts":0,"dur":1000},
+            {"ph":"e","name":"runtime-profiler:js-to-wasm:update-map","cat":"blink.user_timing","pid":1,"tid":2,"ts":80,"id2":{"local":"0xd"}},
+            {"ph":"b","name":"runtime-profiler:js-to-wasm:update-map","cat":"blink.user_timing","pid":1,"tid":2,"ts":10,"id2":{"local":"0xd"}},
+            {"ph":"b","name":"runtime-profiler:js-to-wasm:update-map","cat":"blink.user_timing","pid":1,"tid":2,"ts":20,"id2":{"local":"0xe"}},
+            {"ph":"e","name":"runtime-profiler:js-to-wasm:update-map","cat":"blink.user_timing","pid":1,"tid":2,"ts":50,"id2":{"local":"0xe"}},
+            {"ph":"b","name":"runtime-profiler:js-to-wasm:update-map","cat":"blink.user_timing","pid":1,"tid":9,"ts":1,"id2":{"local":"0xd"}}
+        ]});
+        let summary = analyze_chromium_trace_bytes(&serde_json::to_vec(&trace).unwrap()).unwrap();
+        assert_eq!(summary.boundary_markers.len(), 1);
+        assert_eq!(summary.boundary_markers[0].occurrences, 2);
+        assert_eq!(summary.boundary_markers[0].total_duration_us, 100);
+        assert_eq!(summary.boundary_markers[0].max_duration_us, 70);
+    }
+
+    #[test]
+    fn incomplete_boundary_pairs_fail_instead_of_reporting_zero_measures() {
+        for endpoint in [
+            json!({"ph":"b","name":"runtime-profiler:js-to-wasm:update","cat":"blink.user_timing","pid":1,"tid":2,"ts":10,"id2":{"local":"0xd"}}),
+            json!({"ph":"e","name":"runtime-profiler:js-to-wasm:update","cat":"blink.user_timing","pid":1,"tid":2,"ts":20,"id2":{"local":"0xd"}}),
+            json!({"ph":"b","name":"runtime-profiler:js-to-wasm:update","cat":"blink.user_timing","pid":1,"tid":2,"ts":10}),
+        ] {
+            let trace = json!({"traceEvents": [
+                {"ph":"M","name":"thread_name","pid":1,"tid":2,"args":{"name":"CrRendererMain"}},
+                endpoint
+            ]});
+            assert!(analyze_chromium_trace_bytes(&serde_json::to_vec(&trace).unwrap()).is_err());
+        }
     }
 
     #[test]
