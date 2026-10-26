@@ -315,19 +315,22 @@ fn parse_main_thread_boundary_pairs(
     // Trace storage order need not be temporal. Begins sort before ends at an
     // equal timestamp so zero-duration measures remain valid.
     endpoints.sort();
-    let mut pending = BTreeMap::new();
+    let mut pending: BTreeMap<_, Vec<u64>> = BTreeMap::new();
     let mut result = Vec::new();
     for (timestamp, phase, name, identity) in endpoints {
         let key = (name, identity);
         if phase == "b" {
-            ensure!(
-                pending.insert(key, timestamp).is_none(),
-                "duplicate boundary measure begin"
-            );
+            pending.entry(key).or_default().push(timestamp);
         } else {
-            let start_us = pending
-                .remove(&key)
+            let starts = pending
+                .get_mut(&key)
                 .context("boundary measure end has no matching begin")?;
+            let start_us = starts
+                .pop()
+                .context("boundary measure end has no matching begin")?;
+            if starts.is_empty() {
+                pending.remove(&key);
+            }
             result.push(TraceEvent {
                 name: key.0,
                 category: "blink.user_timing".to_owned(),
@@ -872,6 +875,22 @@ mod tests {
         assert_eq!(summary.runtime_attribution, baseline.runtime_attribution);
         assert_eq!(summary.boundary_markers[0].occurrences, 1);
         assert_eq!(summary.boundary_markers[0].total_duration_us, 100000);
+    }
+
+    #[test]
+    fn nestable_async_ids_can_be_reused_by_overlapping_boundary_measures() {
+        let trace = json!([
+            {"ph":"M","name":"thread_name","pid":1,"tid":2,"args":{"name":"CrRendererMain"}},
+            {"ph":"b","name":"runtime-profiler:js-to-wasm:update","cat":"blink.user_timing","pid":1,"tid":2,"ts":10,"id2":{"local":"0xd"}},
+            {"ph":"b","name":"runtime-profiler:js-to-wasm:update","cat":"blink.user_timing","pid":1,"tid":2,"ts":20,"id2":{"local":"0xd"}},
+            {"ph":"e","name":"runtime-profiler:js-to-wasm:update","cat":"blink.user_timing","pid":1,"tid":2,"ts":50,"id2":{"local":"0xd"}},
+            {"ph":"e","name":"runtime-profiler:js-to-wasm:update","cat":"blink.user_timing","pid":1,"tid":2,"ts":100,"id2":{"local":"0xd"}}
+        ]);
+        let summary = analyze_chromium_trace_bytes(&serde_json::to_vec(&trace).unwrap()).unwrap();
+        assert_eq!(summary.boundary_markers[0].occurrences, 2);
+        assert_eq!(summary.boundary_markers[0].total_duration_us, 120);
+        assert_eq!(summary.boundary_markers[0].max_duration_us, 90);
+        assert_eq!(summary.top_level_task_count, 0);
     }
 
     #[test]
