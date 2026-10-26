@@ -7,7 +7,7 @@
 
 `<label>` should identify the stable operation being instrumented, such as `update-map` or `result-copy`. Keep labels deterministic and independent of request IDs, user data, URLs, timestamps, or other per-run values.
 
-Real Chromium User Timing measures recorded as nestable asynchronous begin/end (`b`/`e`) pairs are normalized alongside complete (`X`) measures. Endpoints must match the renderer main thread, marker name, async ID kind/value and scope. Incomplete or ambiguous boundary pairs fail capture rather than silently reporting no boundary evidence. Other asynchronous trace events remain outside this normalization.
+Real Chromium User Timing measures recorded as nestable asynchronous begin/end (`b`/`e`) pairs are normalized alongside complete (`X`) measures. Endpoints must match the renderer main thread, marker name, async ID kind/value and scope. Repeated IDs follow Chromium nestable-async stack semantics. Incomplete boundary pairs fail capture rather than silently reporting no boundary evidence. Asynchronous measures contribute only boundary elapsed-section evidence; they do not add renderer-main tasks, long tasks, hot paths or runtime occupancy. Other asynchronous trace events remain outside this normalization.
 
 ## What the duration means
 
