@@ -19,7 +19,30 @@ use crate::contract::{
 use crate::digest::sha256_file;
 use crate::native_perf::{COLLECTOR_ID as NATIVE_PERF_COLLECTOR_ID, RAW_REPORT_ARTIFACT};
 
+/// A validation report with the documents parsed to produce it, so callers
+/// that need them next do not read and parse the same files a second time.
+pub(super) struct ValidatedDocuments {
+    pub(super) report: ValidationReport,
+    pub(super) metrics: MetricsDocument,
+    pub(super) guidance: AgentGuidance,
+}
+
 pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
+    Ok(validate_documents(bundle)?.report)
+}
+
+/// Validates the bundle and fails unless it is valid.
+pub(super) fn require_valid_documents(bundle: &Path) -> Result<ValidatedDocuments> {
+    let documents = validate_documents(bundle)?;
+    ensure!(
+        documents.report.valid,
+        "bundle validation failed: {}",
+        documents.report.diagnostics.join("; ")
+    );
+    Ok(documents)
+}
+
+fn validate_documents(bundle: &Path) -> Result<ValidatedDocuments> {
     let manifest_path = bundle.join("manifest.json");
     let manifest: BundleManifest = read_json(&manifest_path)?;
     ensure!(
@@ -131,12 +154,16 @@ pub fn validate_bundle(bundle: &Path) -> Result<ValidationReport> {
         diagnostics.push("HTTP workload evidence requires the http-curl collector".to_owned());
     }
 
-    Ok(ValidationReport {
-        schema_version: "runtime-profiler/validation/v1".to_owned(),
-        bundle_id: manifest.bundle_id,
-        valid: diagnostics.is_empty(),
-        verified_files,
-        diagnostics,
+    Ok(ValidatedDocuments {
+        report: ValidationReport {
+            schema_version: "runtime-profiler/validation/v1".to_owned(),
+            bundle_id: manifest.bundle_id,
+            valid: diagnostics.is_empty(),
+            verified_files,
+            diagnostics,
+        },
+        metrics,
+        guidance,
     })
 }
 
@@ -290,13 +317,7 @@ fn validate_browser_artifacts(
 }
 
 pub fn summarize_bundle(bundle: &Path) -> Result<MetricsDocument> {
-    let report = validate_bundle(bundle)?;
-    ensure!(
-        report.valid,
-        "bundle validation failed: {}",
-        report.diagnostics.join("; ")
-    );
-    read_json(&bundle.join("metrics.json"))
+    Ok(require_valid_documents(bundle)?.metrics)
 }
 
 fn is_safe_relative_path(path: &str) -> bool {

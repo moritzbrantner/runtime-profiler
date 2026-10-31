@@ -1,9 +1,8 @@
 use std::path::Path;
 
-use anyhow::{Result, ensure};
+use anyhow::Result;
 
-use super::read_json;
-use super::validate::validate_bundle;
+use super::validate::require_valid_documents;
 use crate::browser_chromium::{BROWSER_RUNTIME_ARTIFACT, TRACE_SUMMARY_ARTIFACT};
 use crate::chromium_trace::ChromiumTraceSummary;
 use crate::contract::{
@@ -15,13 +14,7 @@ const MAX_BROWSER_GUIDANCE_PER_KIND: usize = 3;
 const MAX_BROWSER_GUIDANCE_LABEL_CHARS: usize = 120;
 
 pub fn render_agent_guidance(bundle: &Path) -> Result<String> {
-    let report = validate_bundle(bundle)?;
-    ensure!(
-        report.valid,
-        "bundle validation failed: {}",
-        report.diagnostics.join("; ")
-    );
-    let guidance: AgentGuidance = read_json(&bundle.join("agent-guidance.json"))?;
+    let guidance = require_valid_documents(bundle)?.guidance;
     let mut output = format!("# Runtime evidence: {}\n\n", guidance.scenario_id);
     output.push_str("## Observations\n\n");
     for observation in guidance.observations {
