@@ -1,5 +1,28 @@
 # Adoption Guide
 
+## Reusing the Linux CLI from GitHub Actions
+
+Successful `Publish Score History` main-branch runs already build the release CLI.
+They also publish that executable as
+`runtime-profiler-linux-x86_64-<full source SHA>` for 90 days. This is a
+**precompiled Linux x86_64 GitHub Actions artifact**, not a permanent release or
+an assertion of portability to other platforms. The artifact is named by the
+exact source revision that built it; GitHub's artifact upload and download
+mechanism records and checks its digest.
+
+Consumers can use `gh run download <producer run ID> --repo
+moritzbrantner/runtime-profiler --name
+runtime-profiler-linux-x86_64-<source SHA> --dir <destination>` and install the
+downloaded executable with `install -m 755`. Resolve the run by **both** the
+expected source SHA and successful producer workflow rather than choosing the
+newest artifact. Keep the destination outside the source checkout.
+
+These artifacts expire. If a pinned source revision has no valid artifact, a
+consumer must report that fact and either build the same revision with
+`cargo install --git ... --rev <source SHA> --locked` or defer its measurement;
+it must never silently substitute a different profiler revision. Release and
+cross-platform distribution can be added once an actual consumer needs them.
+
 `runtime-profiler` is an evidence collector, not a universal repository gate. Adopt it where runtime cost is part of the product or a recurring engineering decision; leave tiny or performance-insensitive repositories alone.
 
 ## Rollout principle
