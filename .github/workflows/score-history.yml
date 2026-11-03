@@ -77,6 +77,26 @@ jobs:
             rm -f target/history-score.json
           fi
 
+      # The current source was already built in release mode for history capture.
+      # Reuse those exact bytes for other repositories instead of compiling again
+      # during each consumer's Pages/CI job. GitHub supplies the artifact digest.
+      - name: Smoke precompiled Linux CLI
+        if: ${{ steps.measurement.outputs.status == '0' }}
+        run: |
+          set -euo pipefail
+          test -x target/release/runtime-profiler
+          target/release/runtime-profiler --version
+          target/release/runtime-profiler detect >/dev/null
+
+      - name: Publish source-addressed Linux CLI artifact
+        if: ${{ steps.measurement.outputs.status == '0' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-profiler-linux-x86_64-${{ github.sha }}
+          path: target/release/runtime-profiler
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Ensure history branch exists
         shell: bash
         run: |
