@@ -10,7 +10,7 @@
     "verify:pages": "npm run build:pages && npm run test:pages"
   },
   "devDependencies": {
-    "@moritzbrantner/github-pages-template": "git+https://github.com/moritzbrantner/github-pages-template.git#abff6089e687d2c1b8d5afdfe7ef6f59fd825f74",
+    "@moritzbrantner/github-pages-template": "git+https://github.com/moritzbrantner/github-pages-template.git#ac4c82b839e4e38ed642e996ac0660d704a37460",
     "typescript": "7.0.2"
   },
   "engines": {
