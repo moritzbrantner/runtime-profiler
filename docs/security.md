@@ -16,6 +16,9 @@ The v1 process collector does not persist:
 
 `scenario.json` stores the program name and argument count, not the argument
 values. The manifest stores artifact digests and source identity, not Git diffs.
+The exception is a browser journey's `browser_args`: Chromium flags decide what
+a capture measures, so `browser-runtime.json` records them, and scenario
+validation restricts them to short values without paths.
 
 Future adapters must provide explicit redaction before their normalized output
 can be included. Raw traces, dumps, and heap profiles should be opt-in sidecars,

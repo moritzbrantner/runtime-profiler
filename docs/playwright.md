@@ -33,6 +33,20 @@ export async function run({ page }) {
 
 The journey must arrange or connect to its own deterministic application fixture. This adapter does not start a development server, Docker Compose stack, or production service. Service lifecycle belongs to the later service/browser orchestration layer.
 
+## Browser launch flags
+
+Headless Chromium falls back to software rendering, which distorts WebGL and WebGPU work. A journey that needs the real GPU declares Chromium flags in `target.browser_args`, and inherits whatever the GPU path needs from the cleared environment:
+
+```yaml
+target:
+  type: browser-journey
+  module: profiles/world.mjs
+  inherit_env: [HOME, DISPLAY, XAUTHORITY, WAYLAND_DISPLAY, XDG_RUNTIME_DIR]
+  browser_args: [--enable-gpu, --use-angle=gl, --ignore-gpu-blocklist]
+```
+
+Each flag is `--name` or `--name=value`, at most 32 flags of 256 bytes. Values may not contain paths. Flags that take the browser away from the driver (`--remote-debugging-*`, `--user-data-dir`, `--headless`, `--load-extension`) are rejected. The flags are recorded in `browser-runtime.json`, so never put a secret in one, and two bundles launched with different flags are incomparable.
+
 ## Consumer prerequisites
 
 The resolved working directory must provide:

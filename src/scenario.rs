@@ -76,6 +76,7 @@ impl LoadedScenario {
                 module,
                 working_directory,
                 inherit_env,
+                ..
             } => TargetEvidence::BrowserJourney {
                 module: module.to_string_lossy().into_owned(),
                 working_directory_set: working_directory.is_some(),
@@ -185,8 +186,12 @@ pub fn validate_scenario(scenario: &Scenario) -> Result<()> {
         Target::BrowserJourney {
             module,
             inherit_env,
+            browser_args,
             ..
-        } => validate_browser_target(scenario, module, inherit_env),
+        } => {
+            validate_browser_args(browser_args)?;
+            validate_browser_target(scenario, module, inherit_env)
+        }
         Target::HttpWorkload { fixture, .. } => {
             validate_inherit_env(&fixture.inherit_env)?;
             crate::http_workload::validate_target(scenario)
@@ -262,6 +267,51 @@ fn validate_browser_target(
     validate_inherit_env(inherit_env)
 }
 
+/// Launch flags are recorded in `browser-runtime.json`, so values stay short and free of paths,
+/// and flags that would take the browser away from the driver are refused.
+fn validate_browser_args(browser_args: &[String]) -> Result<()> {
+    const MAX_BROWSER_ARGS: usize = 32;
+    const MAX_BROWSER_ARG_BYTES: usize = 256;
+    const RESERVED_FLAGS: [&str; 4] = [
+        "remote-debugging",
+        "user-data-dir",
+        "headless",
+        "load-extension",
+    ];
+    ensure!(
+        browser_args.len() <= MAX_BROWSER_ARGS,
+        "browser_args may contain at most {MAX_BROWSER_ARGS} flags"
+    );
+    for argument in browser_args {
+        ensure!(
+            argument.len() <= MAX_BROWSER_ARG_BYTES,
+            "browser flag exceeds {MAX_BROWSER_ARG_BYTES} bytes: {argument}"
+        );
+        let flag = argument
+            .strip_prefix("--")
+            .with_context(|| format!("browser flag must start with `--`: {argument}"))?;
+        let (name, value) = flag.split_once('=').unwrap_or((flag, ""));
+        ensure!(
+            !name.is_empty()
+                && name.chars().all(|character| character.is_ascii_lowercase()
+                    || character.is_ascii_digit()
+                    || character == '-')
+                && value
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric()
+                        || matches!(character, '.' | '_' | ',' | ':' | '-')),
+            "invalid browser flag: {argument}"
+        );
+        ensure!(
+            !RESERVED_FLAGS
+                .iter()
+                .any(|reserved| name.starts_with(reserved)),
+            "browser flag is reserved for the driver: {argument}"
+        );
+    }
+    Ok(())
+}
+
 fn validate_inherit_env(inherit_env: &[String]) -> Result<()> {
     for name in inherit_env {
         ensure!(
@@ -312,6 +362,7 @@ mod tests {
                 module: PathBuf::from("profiles/journey.mjs"),
                 working_directory: None,
                 inherit_env: Vec::new(),
+                browser_args: Vec::new(),
             },
             run: RunConfig {
                 warmup_iterations: 0,
@@ -361,6 +412,41 @@ mod tests {
         };
         *module = PathBuf::from("../journey.mjs");
         assert!(validate_scenario(&scenario).is_err());
+    }
+
+    fn with_browser_args(args: &[&str]) -> Scenario {
+        let mut scenario = valid_browser_scenario();
+        let Target::BrowserJourney { browser_args, .. } = &mut scenario.target else {
+            unreachable!();
+        };
+        *browser_args = args.iter().map(|arg| (*arg).to_owned()).collect();
+        scenario
+    }
+
+    #[test]
+    fn accepts_gpu_browser_args() {
+        let scenario =
+            with_browser_args(&["--enable-gpu", "--use-angle=gl", "--ignore-gpu-blocklist"]);
+        assert!(validate_scenario(&scenario).is_ok());
+    }
+
+    #[test]
+    fn rejects_malformed_or_reserved_browser_args() {
+        for argument in [
+            "enable-gpu",
+            "--",
+            "--Enable-GPU",
+            "--log-file=/tmp/out",
+            "--remote-debugging-port=9222",
+            "--user-data-dir=profile",
+            "--headless=new",
+            "--load-extension=x",
+        ] {
+            assert!(
+                validate_scenario(&with_browser_args(&[argument])).is_err(),
+                "{argument} should be rejected"
+            );
+        }
     }
 
     #[test]

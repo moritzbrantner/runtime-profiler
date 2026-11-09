@@ -21,7 +21,7 @@ function parseArgs(argv) {
     }
     values.set(name, value);
   }
-  for (const required of ["--journey", "--trace", "--metadata"]) {
+  for (const required of ["--journey", "--trace", "--metadata", "--browser-args"]) {
     if (!values.has(required)) {
       throw new Error(`missing required argument ${required}`);
     }
@@ -77,7 +77,8 @@ async function main() {
     throw new Error("Playwright journey module must export async function run({ page })");
   }
 
-  const browser = await chromium.launch({ headless: true });
+  const browserArgs = JSON.parse(args.get("--browser-args"));
+  const browser = await chromium.launch({ headless: true, args: browserArgs });
   let session;
   let traceStarted = false;
   try {
@@ -107,6 +108,7 @@ async function main() {
           browser_version: browser.version(),
           viewport: { width: 1280, height: 720 },
           trace_categories: TRACE_CATEGORIES.split(","),
+          browser_args: browserArgs,
         },
         null,
         2,
