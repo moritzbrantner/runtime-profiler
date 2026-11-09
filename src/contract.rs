@@ -46,6 +46,8 @@ pub enum Target {
         working_directory: Option<PathBuf>,
         #[serde(default)]
         inherit_env: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        browser_args: Vec<String>,
     },
     HttpWorkload {
         fixture: HttpFixture,

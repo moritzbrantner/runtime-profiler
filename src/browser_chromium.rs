@@ -53,6 +53,8 @@ pub struct BrowserRuntimeDocument {
     pub browser_version: String,
     pub viewport: BrowserViewport,
     pub trace_categories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub browser_args: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -130,6 +132,7 @@ pub fn capture_browser_chromium(loaded: &LoadedScenario) -> Result<BrowserChromi
     let Target::BrowserJourney {
         module,
         working_directory,
+        browser_args,
         ..
     } = &loaded.scenario.target
     else {
@@ -166,7 +169,9 @@ pub fn capture_browser_chromium(loaded: &LoadedScenario) -> Result<BrowserChromi
         .arg("--trace")
         .arg(&trace)
         .arg("--metadata")
-        .arg(&metadata);
+        .arg(&metadata)
+        .arg("--browser-args")
+        .arg(serde_json::to_string(browser_args).context("failed to encode browser args")?);
     let sample = execute_prepared_command(loaded, command, 1, "Playwright browser journey")
         .context("browser-chromium capture failed")?;
     ensure!(
@@ -342,6 +347,7 @@ mod tests {
                 height: 720,
             },
             trace_categories: vec!["devtools.timeline".to_owned()],
+            browser_args: Vec::new(),
         }
     }
 

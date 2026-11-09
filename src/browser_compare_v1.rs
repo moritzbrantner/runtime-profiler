@@ -244,6 +244,14 @@ fn compare_runtime_identity(
         mismatches,
         missing,
     );
+
+    // Absent means the default launch, so an empty list is a value rather than missing evidence.
+    if reference.browser_args != candidate.browser_args {
+        mismatches.push(format!(
+            "Chromium launch arguments differ (reference={:?}, candidate={:?})",
+            reference.browser_args, candidate.browser_args
+        ));
+    }
 }
 
 fn compare_required(
@@ -335,6 +343,7 @@ mod tests {
                 "v8.execute".to_owned(),
                 "blink.user_timing".to_owned(),
             ],
+            browser_args: Vec::new(),
         }
     }
 
@@ -402,6 +411,28 @@ mod tests {
                 .reasons
                 .iter()
                 .any(|reason| reason.contains("browser journey digest"))
+        );
+    }
+
+    #[test]
+    fn different_launch_args_are_incomparable() {
+        let reference = runtime();
+        let mut candidate = runtime();
+        candidate.browser_args = vec!["--enable-gpu".to_owned()];
+        let assessment = assess_recorded_identity(
+            &manifest(),
+            &manifest(),
+            Some(&reference),
+            Some(&candidate),
+            Some(&summary()),
+            Some(&summary()),
+        );
+        assert_eq!(assessment.status, BrowserComparabilityStatus::Incomparable);
+        assert!(
+            assessment
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("launch arguments differ"))
         );
     }
 
