@@ -77,6 +77,50 @@ jobs:
             rm -f target/history-score.json
           fi
 
+      # The current source was already built in release mode for history capture.
+      # Reuse those exact bytes for other repositories instead of compiling again
+      # during each consumer's Pages/CI job. GitHub supplies the artifact digest.
+      - name: Smoke precompiled Linux CLI
+        if: ${{ steps.measurement.outputs.status == '0' }}
+        run: |
+          set -euo pipefail
+          test -x target/release/runtime-profiler
+          target/release/runtime-profiler --version
+          target/release/runtime-profiler detect >/dev/null
+
+      - name: Publish source-addressed Linux CLI artifact
+        if: ${{ steps.measurement.outputs.status == '0' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: runtime-profiler-linux-x86_64-${{ github.sha }}
+          path: target/release/runtime-profiler
+          if-no-files-found: error
+          retention-days: 90
+
+      # A public, source-addressed release asset is consumable from other
+      # repositories' reusable workflow setup commands without credentials.
+      # Keep earlier assets immutable and append under one low-noise release.
+      - name: Publish public source-addressed Linux CLI
+        if: ${{ steps.measurement.outputs.status == '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag=cli-artifacts
+          asset="runtime-profiler-linux-x86_64-$GITHUB_SHA"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --target "$GITHUB_SHA" \
+              --title "Source-addressed Linux CLI builds" --prerelease \
+              --notes "Reusable x86_64 Linux binaries built by the main-branch score-history workflow. Each asset name includes its source commit; previously published assets are never overwritten."
+          fi
+          if gh release view "$tag" --json assets --jq '.assets[].name' | grep -Fxq "$asset"; then
+            echo "Source-addressed CLI already published: $asset"
+          else
+            cp target/release/runtime-profiler "$RUNNER_TEMP/$asset"
+            gh release upload "$tag" "$RUNNER_TEMP/$asset"
+          fi
+
       - name: Ensure history branch exists
         shell: bash
         run: |

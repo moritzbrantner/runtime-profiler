@@ -1,5 +1,44 @@
 # Adoption Guide
 
+## Reusing the precompiled Linux CLI
+
+Successful `Publish Score History` main-branch runs already build the release CLI.
+They publish the same tested executable as a 90-day Actions artifact and as a
+public, source-addressed release asset named
+`runtime-profiler-linux-x86_64-<full source SHA>`. This is a **precompiled Linux
+x86_64 executable**, not a claim that it works on other architectures. Each
+source revision gets a distinct immutable asset under the one `cli-artifacts`
+prerelease (existing names are never overwritten).
+
+Public workflows, including reusable setup commands without a token, can fetch
+the intended revision directly:
+
+```sh
+curl --fail --location --silent --show-error \
+  --output runtime-profiler \
+  "https://github.com/moritzbrantner/runtime-profiler/releases/download/cli-artifacts/runtime-profiler-linux-x86_64-<full source SHA>"
+install -m 755 runtime-profiler /some/known/bin/directory/runtime-profiler
+/some/known/bin/directory/runtime-profiler --version
+```
+
+GitHub's release asset name and pinned source commit are the acquisition
+authority. CI runs `--version` and `detect` before use; do not silently change
+source versions on a failed download. No recursive checksum-refresh workflow is
+needed for a trusted public publisher.
+
+Authenticated consumers can alternatively use `gh run download <producer run ID> --repo
+moritzbrantner/runtime-profiler --name
+runtime-profiler-linux-x86_64-<source SHA> --dir <destination>` and install the
+downloaded executable with `install -m 755`. Resolve the run by **both** the
+expected source SHA and successful producer workflow rather than choosing the
+newest artifact. GitHub's Actions artifact service supplies its digest and
+enforces its 90-day retention. Keep the destination outside the source checkout.
+
+If an older source revision predates public release assets and its Actions
+artifact has expired, a consumer must report that fact and build that exact revision with
+`cargo install --git ... --rev <source SHA> --locked` or defer its measurement;
+it must never silently substitute a different profiler revision.
+
 `runtime-profiler` is an evidence collector, not a universal repository gate. Adopt it where runtime cost is part of the product or a recurring engineering decision; leave tiny or performance-insensitive repositories alone.
 
 ## Rollout principle

@@ -440,6 +440,7 @@ mod tests {
                     module: PathBuf::from("journey.mjs"),
                     working_directory: None,
                     inherit_env: Vec::new(),
+                    browser_args: Vec::new(),
                 },
                 run: RunConfig {
                     warmup_iterations: 0,
