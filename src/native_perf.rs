@@ -535,7 +535,11 @@ fn parse_folded_call_paths(report: &str) -> Result<BTreeMap<String, ParsedCallPa
             "perf folded call-path line exceeds the safety limit"
         );
         let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') || !trimmed.contains(';') {
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || !trimmed.contains(';')
+            || is_folded_symbol_header(trimmed)
+        {
             continue;
         }
 
@@ -544,8 +548,8 @@ fn parse_folded_call_paths(report: &str) -> Result<BTreeMap<String, ParsedCallPa
             samples > 0,
             "perf folded call-path sample count must be positive"
         );
-        let frames = stack
-            .split(';')
+        let frames = split_folded_frames(stack)
+            .into_iter()
             .map(|frame| bounded_field(frame, "call-path symbol"))
             .collect::<Result<Vec<_>>>()?;
         ensure!(!frames.is_empty(), "perf folded call path is empty");
@@ -624,6 +628,36 @@ fn parse_folded_call_path_line(line: &str) -> Result<(u64, &str)> {
     }
 
     bail!("malformed perf folded call-path row: missing sample count")
+}
+
+/// perf prints a `<percent>%  [.] <symbol>` header before each symbol's folded
+/// paths; Rust symbols such as `[f32; 3]` make it look like a path row.
+fn is_folded_symbol_header(line: &str) -> bool {
+    line.split_whitespace()
+        .next()
+        .and_then(|first| first.strip_suffix('%'))
+        .is_some_and(|percent| percent.parse::<f64>().is_ok())
+}
+
+/// Splits a folded stack on `;` separators, ignoring `;` inside `[...]`
+/// (Rust array types such as `[f32; 3]`).
+fn split_folded_frames(stack: &str) -> Vec<&str> {
+    let mut depth = 0_usize;
+    let mut start = 0_usize;
+    let mut frames = Vec::new();
+    for (index, character) in stack.char_indices() {
+        match character {
+            '[' => depth += 1,
+            ']' => depth = depth.saturating_sub(1),
+            ';' if depth == 0 => {
+                frames.push(&stack[start..index]);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    frames.push(&stack[start..]);
+    frames
 }
 
 fn try_parse_u64(value: &str) -> Option<u64> {
@@ -950,6 +984,33 @@ mod tests {
             parse_folded_call_paths("Overhead  Samples  Symbol\n  50.00%  5  work\n# comment\n")
                 .expect("non-path rows are ignored");
         assert!(call_paths.is_empty());
+    }
+
+    #[test]
+    fn folded_call_paths_keep_semicolons_inside_rust_array_types() {
+        // perf 7.0.14 output shape: a `<percent>%  [.] <symbol>` header row
+        // (with IPC columns) followed by `<count> <stack>` path rows.
+        let leaf = "core::ptr::drop_glue::<alloc::collections::btree::map::BTreeMap<sim::BodyId, [f32; 3]>>";
+        let report = format!(
+            "     0.03%  [.] {leaf}                -      -    \n\
+             7 main;sim::step::<[f64; 3]>;{leaf}\n\
+             2 main;[unknown];{leaf}\n"
+        );
+        let call_paths = parse_folded_call_paths(&report).expect("parse folded call paths");
+        assert_eq!(call_paths.len(), 1);
+        let paths = &call_paths[leaf].paths;
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0].samples, 7);
+        assert_eq!(
+            paths[0]
+                .frames
+                .iter()
+                .map(|frame| frame.symbol.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main", "sim::step::<[f64; 3]>", leaf]
+        );
+        assert_eq!(paths[1].samples, 2);
+        assert_eq!(paths[1].frames[1].symbol, "[unknown]");
     }
 
     #[test]
