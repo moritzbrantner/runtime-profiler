@@ -33,6 +33,8 @@ pub const RAW_REPORT_MEDIA_TYPE: &str = "text/tab-separated-values; charset=utf-
 const MAX_REPORT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_REPORT_LINES: usize = 100_000;
 const MAX_FIELD_BYTES: usize = 2_048;
+/// Columns requested by `--fields=sample,period,srcline,symbol,dso`.
+const REQUESTED_REPORT_FIELDS: usize = 5;
 const MAX_HOTSPOTS: usize = 256;
 const MAX_CALL_PATH_FRAMES: usize = 32;
 const MAX_CALL_PATHS_PER_HOTSPOT: usize = 8;
@@ -380,7 +382,7 @@ fn parse_perf_report(
             MAX_REPORT_LINES
         );
         ensure!(
-            line.len() <= MAX_FIELD_BYTES * 5,
+            line.len() <= MAX_FIELD_BYTES * (REQUESTED_REPORT_FIELDS + 1),
             "perf report line exceeds the safety limit"
         );
         let trimmed = line.trim();
@@ -388,10 +390,17 @@ fn parse_perf_report(
             continue;
         }
 
-        let fields: Vec<&str> = line.split('\t').collect();
+        // The leading columns are the fields requested via `--fields`. perf 7
+        // appends its own `IPC [IPC Coverage]` column even with explicit
+        // `--fields`, so columns after the requested ones are ignored.
+        let fields: Vec<&str> = line
+            .splitn(REQUESTED_REPORT_FIELDS + 1, '\t')
+            .take(REQUESTED_REPORT_FIELDS)
+            .collect();
         ensure!(
-            fields.len() == 5,
-            "malformed perf report row: expected 5 tab-separated fields, found {}",
+            fields.len() == REQUESTED_REPORT_FIELDS,
+            "malformed perf report row: expected {} tab-separated fields, found {}",
+            REQUESTED_REPORT_FIELDS,
             fields.len()
         );
         let samples = parse_u64_field(fields[0], "sample")?;
@@ -631,7 +640,14 @@ fn attach_call_paths(
     call_paths: &BTreeMap<String, ParsedCallPaths>,
 ) {
     for hotspot in &mut hotspots.hotspots {
-        if let Some(paths) = call_paths.get(&hotspot.symbol) {
+        // Flat-report symbols carry perf's `[.] ` / `[k] ` privilege marker;
+        // folded call-path frames do not.
+        let symbol = hotspot
+            .symbol
+            .strip_prefix("[.] ")
+            .or_else(|| hotspot.symbol.strip_prefix("[k] "))
+            .unwrap_or(&hotspot.symbol);
+        if let Some(paths) = call_paths.get(symbol) {
             hotspot.call_paths = paths.paths.clone();
             hotspot.call_paths_truncated = paths.truncated;
         }
@@ -941,6 +957,52 @@ mod tests {
         let error = parse_folded_call_paths("main;dispatch;work\n")
             .expect_err("missing call-path sample count must fail");
         assert!(error.to_string().contains("missing sample count"));
+    }
+
+    #[test]
+    fn parser_accepts_perf6_and_perf7_report_rows() {
+        // perf 6.x: exactly the requested columns.
+        let perf6 = concat!(
+            "#      Samples\t      Period\tSource:Line                          \tSymbol                              \tShared Object       \n",
+            " 58         \t 60283723   \tsrc/main.rs:10                       \t[.] work                            \texample             \n",
+            " 1          \t 46855      \t??:0                                 \t[k] 0xffffffffbb304109              \t[unknown]           \n",
+        );
+        // perf 7.x: appends an `IPC [IPC Coverage]` column even with explicit --fields.
+        let perf7 = concat!(
+            "#      Samples\t      Period\tSource:Line                          \tSymbol                              \tShared Object       \tIPC   [IPC Coverage]\n",
+            " 58         \t 60283723   \tsrc/main.rs:10                       \t[.] work                            \texample             \t-      -            \n",
+            " 1          \t 46855      \t??:0                                 \t[k] 0xffffffffbb304109              \t[unknown]           \t-      -            \n",
+        );
+        let parse = |report: &str| {
+            parse_perf_report(
+                report,
+                &loaded_scenario(),
+                "perf version test".to_owned(),
+                Some("toolchain-fingerprint".to_owned()),
+            )
+            .expect("parse report")
+        };
+        let from_perf6 = parse(perf6);
+        let from_perf7 = parse(perf7);
+
+        assert_eq!(from_perf6.total_samples, 59);
+        assert_eq!(from_perf6.total_weight, 60_330_578);
+        assert_eq!(from_perf6.hotspots, from_perf7.hotspots);
+        assert_eq!(
+            from_perf7.hotspots[0].source_file.as_deref(),
+            Some("src/main.rs")
+        );
+        assert_eq!(from_perf7.hotspots[0].line, Some(10));
+        assert_eq!(from_perf7.hotspots[0].dso.as_deref(), Some("example"));
+
+        // Folded frames have no `[.] ` marker; call paths must still attach.
+        let mut hotspots = from_perf7;
+        let call_paths =
+            parse_folded_call_paths("58 main;work\n").expect("parse folded call paths");
+        attach_call_paths(&mut hotspots, &call_paths);
+        assert_eq!(hotspots.hotspots[0].symbol, "[.] work");
+        assert_eq!(hotspots.hotspots[0].call_paths.len(), 1);
+        assert_eq!(hotspots.hotspots[0].call_paths[0].samples, 58);
     }
 
     #[test]
