@@ -5202,6 +5202,88 @@
         }
       ],
       "reason": null
+    },
+    {
+      "commit": "515fceb785f99390c55c3c7beaca0ae277c4cd4b",
+      "parent_commit": "298a52696d3102cfdd65c59b20ba1a3060929947",
+      "timestamp": "2026-11-21T04:49:47Z",
+      "status": "scored",
+      "score": 96,
+      "rating": "good",
+      "average_change_percent": -5.566,
+      "scenario_id": "runtime-profiler-history-self-score-v1",
+      "scenario_digest": "3c0f5cc149bb6f5081014d314a755866639a6ab9d28f9118098ef97d6ca46f87",
+      "environment_fingerprint_schema_version": "runtime-profiler/environment-fingerprint/v1",
+      "environment_fingerprint": "a6c3046fd41fd8c00687360526441189678d1b73c660f353c37fd593232722fe",
+      "workload_digest": "sha256:e99b2e5e92ac0ce41535a0a6b660f112320b47281a0a82142573807ef281311c",
+      "metrics": [
+        {
+          "id": "process.max_observed_rss",
+          "unit": "KiB",
+          "score": 88,
+          "average_change_percent": -16.666,
+          "statistics": [
+            {
+              "statistic": "median",
+              "score": 100,
+              "change_percent": 0,
+              "reference": 12,
+              "candidate": 12
+            },
+            {
+              "statistic": "p95",
+              "score": 75,
+              "change_percent": -33.333,
+              "reference": 12,
+              "candidate": 16
+            }
+          ]
+        },
+        {
+          "id": "process.success_rate",
+          "unit": "ratio",
+          "score": 100,
+          "average_change_percent": 0,
+          "statistics": [
+            {
+              "statistic": "mean",
+              "score": 100,
+              "change_percent": 0,
+              "reference": 1,
+              "candidate": 1
+            }
+          ]
+        },
+        {
+          "id": "process.wall_time",
+          "unit": "ms",
+          "score": 100,
+          "average_change_percent": -0.031,
+          "statistics": [
+            {
+              "statistic": "median",
+              "score": 100,
+              "change_percent": -0.129,
+              "reference": 5.243501,
+              "candidate": 5.250271
+            },
+            {
+              "statistic": "p95",
+              "score": 100,
+              "change_percent": 0.066,
+              "reference": 5.274041,
+              "candidate": 5.270554000000001
+            }
+          ]
+        }
+      ],
+      "excluded_metrics": [
+        {
+          "id": "process.max_rss",
+          "reason": "compatibility alias of process.max_observed_rss; excluded to avoid double-weighting"
+        }
+      ],
+      "reason": null
     }
   ]
 }
